@@ -1,0 +1,41 @@
+schema: spec-driven
+
+context: |
+  Tech stack: Kotlin, Jetpack Compose, Material 3, Firebase (Auth, Firestore, FCM)
+  Architecture: Clean Architecture with MVVM, repository pattern
+  Testing: Greenfield — no test runner configured yet (JUnit 5, Compose Testing, Mockk expected)
+  Style: Material Design 3 with custom color palette, professional UI
+  CI/CD: GitHub Actions for APK building (no local Android Studio)
+  Platform: Android (minSdk 24+, targetSdk 34+)
+  Persistence: Firestore for shared shopping lists, FCM for real-time notifications
+
+rules:
+  proposal:
+    - Include rollback plan for risky changes
+    - Consider offline-first behavior for Firestore
+    - Account for multi-user concurrency (3 users)
+  specs:
+    - Use Given/When/Then for scenarios
+    - Use RFC 2119 keywords (MUST, SHALL, SHOULD, MAY)
+    - Define admin vs regular user permissions explicitly
+    - Specify data model for shared lists, items, stores, and prices
+  design:
+    - Include sequence diagrams for complex flows (auth, real-time sync, notifications)
+    - Document architecture decisions with rationale
+    - Define Firestore collection structure and security rules
+    - Plan for offline caching strategy
+  tasks:
+    - Group by phase, use hierarchical numbering
+    - Keep tasks completable in one session
+    - Separate Firebase setup from UI implementation
+  apply:
+    - Follow existing code patterns
+    - Use conventional commits
+    tdd: false
+    test_command: "./gradlew test"
+  verify:
+    test_command: "./gradlew testDebugUnitTest"
+    build_command: "./gradlew assembleDebug"
+    coverage_threshold: 0
+  archive:
+    - Warn before merging destructive deltas

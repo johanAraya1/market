@@ -1,0 +1,24 @@
+# Built files
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# Firebase
+app/google-services.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local files
+logo market.jpeg
