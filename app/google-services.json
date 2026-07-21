@@ -12,7 +12,12 @@
           "package_name": "com.market"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "1093102259787-sm38a2h8lo995kqc1drr2gbdnennkvbq.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyACbn_Y_7LVg755LifklgThPRk_oEppGjw"
@@ -20,7 +25,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "1093102259787-sm38a2h8lo995kqc1drr2gbdnennkvbq.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
