@@ -1,17 +1,20 @@
 package com.market.data.remote
 
 import android.content.Intent
+import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInAccount
 import com.google.android.gms.common.api.ApiException
-import com.google.android.gms.tasks.Task
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.GoogleAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.market.domain.model.User
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 import javax.inject.Singleton
+
+private const val TAG = "AuthDataSource"
 
 @Singleton
 class AuthDataSource @Inject constructor(
@@ -32,9 +35,20 @@ class AuthDataSource @Inject constructor(
 
     suspend fun firebaseAuthWithGoogle(account: GoogleSignInAccount): User {
         val idToken = account.idToken
-            ?: throw IllegalStateException("idToken is null — requestIdToken missing in GoogleSignInOptions")
+        Log.d(TAG, "idToken present: ${idToken != null}")
+
+        if (idToken == null) {
+            throw IllegalStateException("idToken is null — requestIdToken missing in GoogleSignInOptions")
+        }
+
+        Log.d(TAG, "Creating credential and signing in...")
         val credential = GoogleAuthProvider.getCredential(idToken, null)
-        val authResult = firebaseAuth.signInWithCredential(credential).await()
+
+        val authResult = withTimeoutOrNull(15_000L) {
+            firebaseAuth.signInWithCredential(credential).await()
+        } ?: throw IllegalStateException("Firebase auth timed out after 15 seconds")
+
+        Log.d(TAG, "Auth successful, uid: ${authResult.user?.uid}")
         val firebaseUser = authResult.user
             ?: throw IllegalStateException("Firebase auth returned null user")
 
@@ -49,9 +63,14 @@ class AuthDataSource @Inject constructor(
         )
 
         // Create or update user document
+        Log.d(TAG, "Saving user to Firestore...")
         val userDoc = firestore.collection("users").document(firebaseUser.uid)
-        val existing = userDoc.get().await()
-        if (existing.exists()) {
+        val existing = withTimeoutOrNull(10_000L) {
+            userDoc.get().await()
+        }
+        if (existing == null) {
+            Log.w(TAG, "Firestore read timed out, skipping user save")
+        } else if (existing.exists()) {
             userDoc.update("lastLoginAt", now).await()
         } else {
             userDoc.set(mapOf(
@@ -63,6 +82,7 @@ class AuthDataSource @Inject constructor(
             )).await()
         }
 
+        Log.d(TAG, "User saved successfully")
         return user
     }
 
