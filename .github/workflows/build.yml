@@ -46,6 +46,12 @@ jobs:
         env:
           GOOGLE_SERVICES_JSON_B64: ${{ secrets.GOOGLE_SERVICES_JSON }}
 
+      - name: Decode debug keystore
+        if: env.DEBUG_KS_B64 != ''
+        run: echo "$DEBUG_KS_B64" | base64 -d > app/debug.keystore
+        env:
+          DEBUG_KS_B64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
+
       - name: Write Firebase service account
         if: env.FIREBASE_SA != ''
         run: echo "$FIREBASE_SA" > firebase-service-account.json
