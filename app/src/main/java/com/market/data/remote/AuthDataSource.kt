@@ -31,7 +31,9 @@ class AuthDataSource @Inject constructor(
     }
 
     suspend fun firebaseAuthWithGoogle(account: GoogleSignInAccount): User {
-        val credential = GoogleAuthProvider.getCredential(account.idToken, null)
+        val idToken = account.idToken
+            ?: throw IllegalStateException("idToken is null — requestIdToken missing in GoogleSignInOptions")
+        val credential = GoogleAuthProvider.getCredential(idToken, null)
         val authResult = firebaseAuth.signInWithCredential(credential).await()
         val firebaseUser = authResult.user
             ?: throw IllegalStateException("Firebase auth returned null user")

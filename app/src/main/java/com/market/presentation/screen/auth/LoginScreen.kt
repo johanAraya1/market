@@ -70,11 +70,11 @@ fun LoginScreen(
                         onSignInSuccess()
                     } catch (e: Exception) {
                         isLoading = false
-                        errorMessage = "Error al iniciar sesión"
+                        errorMessage = "Error: ${e.message ?: e.javaClass.simpleName}"
                     }
                 }
             } catch (e: ApiException) {
-                errorMessage = "Error al iniciar sesión"
+                errorMessage = "Google error: ${e.statusCode} - ${e.message}"
             }
         }
     }
