@@ -127,5 +127,5 @@ kapt {
 
 firebaseAppDistribution {
     serviceAccountFile = rootProject.file("firebase-service-account.json")
-    testers = listOf("johanAraya1@gmail.com") // tu email de Google
+    testers = listOf("johan.araya6@gmail.com")
 }
