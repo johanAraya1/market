@@ -24,6 +24,7 @@ class AuthDataSource @Inject constructor(
         val gso = com.google.android.gms.auth.api.signin.GoogleSignInOptions.Builder(
             com.google.android.gms.auth.api.signin.GoogleSignInOptions.DEFAULT_SIGN_IN
         )
+            .requestIdToken(activity.getString(com.market.R.string.default_web_client_id))
             .requestEmail()
             .build()
         return GoogleSignIn.getClient(activity, gso).signInIntent
