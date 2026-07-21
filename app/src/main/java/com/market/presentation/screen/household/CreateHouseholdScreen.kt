@@ -1,5 +1,6 @@
 package com.market.presentation.screen.household
 
+import android.util.Log
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,9 +20,13 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.market.data.remote.AuthDataSource
+import com.market.data.remote.HouseholdDataSource
+import com.market.data.repository.HouseholdRepositoryImpl
 import com.market.domain.usecase.household.CreateHouseholdUseCase
 import kotlinx.coroutines.launch
-import javax.inject.Inject
+
+private const val TAG = "CreateHousehold"
 
 @Composable
 fun CreateHouseholdScreen(
@@ -82,24 +87,30 @@ fun CreateHouseholdScreen(
                 scope.launch {
                     isLoading = true
                     errorMessage = null
-                    // TODO: inject use case via ViewModel
-                    val result = CreateHouseholdUseCase(
-                        com.market.data.repository.HouseholdRepositoryImpl(
-                            com.market.data.remote.HouseholdDataSource(
-                                com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                            ),
-                            com.market.data.remote.AuthDataSource(
-                                com.google.firebase.auth.FirebaseAuth.getInstance(),
-                                com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                            )
-                        )
-                    )(householdName)
-                    isLoading = false
-                    if (result.isSuccess) {
-                        onHouseholdCreated()
-                    } else {
-                        errorMessage = result.exceptionOrNull()?.message
-                            ?: "Error al crear el hogar"
+                    try {
+                        val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                        val firebaseAuth = com.google.firebase.auth.FirebaseAuth.getInstance()
+
+                        val authDataSource = AuthDataSource(firebaseAuth, firestore)
+                        val householdDataSource = HouseholdDataSource(firestore)
+                        val repository = HouseholdRepositoryImpl(householdDataSource, authDataSource)
+                        val useCase = CreateHouseholdUseCase(repository)
+
+                        Log.d(TAG, "Creating household: $householdName")
+                        val result = useCase(householdName)
+                        Log.d(TAG, "Result: ${result.isSuccess}, error: ${result.exceptionOrNull()?.message}")
+
+                        isLoading = false
+                        if (result.isSuccess) {
+                            onHouseholdCreated()
+                        } else {
+                            errorMessage = result.exceptionOrNull()?.message
+                                ?: "Error al crear el hogar"
+                        }
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Exception creating household", e)
+                        isLoading = false
+                        errorMessage = "Error: ${e.message ?: e.javaClass.simpleName}"
                     }
                 }
             },
