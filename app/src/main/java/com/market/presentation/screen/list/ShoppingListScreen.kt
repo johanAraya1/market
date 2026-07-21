@@ -28,7 +28,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -154,21 +153,12 @@ fun ShoppingListScreen(
                     modifier = Modifier.padding(padding)
                 )
             } else {
-                PullToRefreshBox(
-                    isRefreshing = isRefreshing,
-                    onRefresh = {
-                        isRefreshing = true
-                        coroutineScope.launch {
-                            delay(500)
-                            isRefreshing = false
-                        }
-                    },
-                    modifier = Modifier.padding(padding)
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        verticalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
                         // Items grouped by store
                         storesWithItems.forEach { store ->
                             item(key = "store_${store.id}") {
@@ -233,7 +223,6 @@ fun ShoppingListScreen(
 
                         item { Spacer(modifier = Modifier.height(80.dp)) }
                     }
-                }
             }
         }
     }

@@ -54,7 +54,12 @@ class ShoppingListViewModel @Inject constructor(
         _items,
         _stores,
         _isAdmin
-    ) { hid, error, items, stores, isAdmin ->
+    ) { args: Array<*> ->
+        val hid = args[0] as String?
+        val error = args[1] as String?
+        val items = args[2] as List<ShoppingItem>
+        val stores = args[3] as List<Store>
+        val isAdmin = args[4] as Boolean
         ShoppingListUiState(
             itemsByStore = items.groupBy { it.storeId },
             stores = stores,
