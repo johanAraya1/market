@@ -34,11 +34,11 @@ class StoreManagementViewModel @Inject constructor(
     private val _uiState = MutableStateFlow(StoreManagementUiState())
     val uiState: StateFlow<StoreManagementUiState> = _uiState
 
-    private var _householdId: String? = null
+    private val _householdId = MutableStateFlow<String?>(null)
 
     fun setHouseholdId(householdId: String) {
-        if (_householdId == householdId) return
-        _householdId = householdId
+        if (_householdId.value == householdId) return
+        _householdId.value = householdId
         observeStores(householdId)
     }
 

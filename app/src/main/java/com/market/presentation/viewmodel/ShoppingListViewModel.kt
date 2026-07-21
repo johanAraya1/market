@@ -44,20 +44,29 @@ class ShoppingListViewModel @Inject constructor(
 
     private val _error = MutableStateFlow<String?>(null)
     private val _householdId = MutableStateFlow<String?>(null)
+    private val _items = MutableStateFlow<List<ShoppingItem>>(emptyList())
+    private val _stores = MutableStateFlow<List<Store>>(emptyList())
+    private val _isAdmin = MutableStateFlow(false)
 
     val uiState: StateFlow<ShoppingListUiState> = combine(
         _householdId,
-        _error
-    ) { hid, error ->
-        Triple(hid, error, Unit)
+        _error,
+        _items,
+        _stores,
+        _isAdmin
+    ) { hid, error, items, stores, isAdmin ->
+        ShoppingListUiState(
+            itemsByStore = items.groupBy { it.storeId },
+            stores = stores,
+            isLoading = false,
+            error = error,
+            isAdmin = isAdmin
+        )
     }.stateIn(
         viewModelScope,
         SharingStarted.WhileSubscribed(5000),
         ShoppingListUiState()
     )
-
-    private var _items: List<ShoppingItem> = emptyList()
-    private var _stores: List<Store> = emptyList()
 
     fun setHouseholdId(householdId: String) {
         if (_householdId.value == householdId) return
@@ -68,23 +77,14 @@ class ShoppingListViewModel @Inject constructor(
     private fun observeData(householdId: String) {
         viewModelScope.launch {
             observeItemsUseCase(householdId).collect { items ->
-                _items = items
-                emitState()
+                _items.value = items
             }
         }
         viewModelScope.launch {
             getStoresUseCase(householdId).collect { stores ->
-                _stores = stores
-                emitState()
+                _stores.value = stores
             }
         }
-    }
-
-    private fun emitState() {
-        val grouped = _items.groupBy { it.storeId }
-        val firebaseUser = authDataSource.getCurrentFirebaseUser()
-        // Check admin role — simplified: would need household member lookup
-        // For now default to false, will be wired when household context is available
     }
 
     fun addItem(name: String, storeId: String? = null) {
@@ -135,14 +135,14 @@ class ShoppingListViewModel @Inject constructor(
 
     fun completeTrip(onSuccess: () -> Unit, onError: (String) -> Unit) {
         val hid = _householdId.value ?: return
-        val checkedItems = _items.filter { it.isChecked }
+        val checkedItems = _items.value.filter { it.isChecked }
 
         if (checkedItems.isEmpty()) {
             onError("No hay items marcados para registrar")
             return
         }
 
-        val storeMap = _stores.associateBy { it.id }
+        val storeMap = _stores.value.associateBy { it.id }
         val firebaseUser = authDataSource.getCurrentFirebaseUser()
 
         val tripItems = checkedItems.map { item ->

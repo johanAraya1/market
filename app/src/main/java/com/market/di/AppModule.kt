@@ -22,7 +22,6 @@ object AppModule {
         val db = FirebaseFirestore.getInstance()
         val settings = com.google.firebase.firestore.FirebaseFirestoreSettings.Builder()
             .setPersistenceEnabled(true)
-            .setSynchronizeTabs(true)
             .build()
         db.firestoreSettings = settings
         return db

@@ -5,6 +5,7 @@ data class ShoppingItem(
     val name: String = "",
     val householdId: String = "",
     val storeId: String? = null,
+    val price: Double? = null,
     val isChecked: Boolean = false,
     val checkedBy: String? = null,
     val checkedAt: Long? = null,
