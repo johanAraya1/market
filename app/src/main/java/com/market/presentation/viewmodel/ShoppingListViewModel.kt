@@ -3,7 +3,6 @@ package com.market.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.market.data.remote.AuthDataSource
-import com.market.domain.model.MemberRole
 import com.market.domain.model.ShoppingItem
 import com.market.domain.model.Trip
 import com.market.domain.model.TripItem
@@ -16,16 +15,15 @@ import com.market.domain.usecase.trip.CompleteTripUseCase
 import com.market.domain.model.Store
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class ShoppingListUiState(
     val itemsByStore: Map<String?, List<ShoppingItem>> = emptyMap(),
-    val stores: List<Store> = emptyMap().let { emptyList<Store>() },
+    val stores: List<Store> = emptyList(),
     val isLoading: Boolean = true,
     val error: String? = null,
     val isAdmin: Boolean = false
@@ -42,61 +40,42 @@ class ShoppingListViewModel @Inject constructor(
     private val authDataSource: AuthDataSource
 ) : ViewModel() {
 
-    private val _error = MutableStateFlow<String?>(null)
-    private val _householdId = MutableStateFlow<String?>(null)
-    private val _items = MutableStateFlow<List<ShoppingItem>>(emptyList())
-    private val _stores = MutableStateFlow<List<Store>>(emptyList())
-    private val _isAdmin = MutableStateFlow(false)
+    private val _uiState = MutableStateFlow(ShoppingListUiState())
+    val uiState: StateFlow<ShoppingListUiState> = _uiState.asStateFlow()
 
-    val uiState: StateFlow<ShoppingListUiState> = combine(
-        _householdId,
-        _error,
-        _items,
-        _stores,
-        _isAdmin
-    ) { args: Array<Any?> ->
-        val hid = args[0] as String?
-        val error = args[1] as String?
-        val items = args[2] as List<ShoppingItem>
-        val stores = args[3] as List<Store>
-        val isAdmin = args[4] as Boolean
-        ShoppingListUiState(
-            itemsByStore = items.groupBy { it.storeId },
-            stores = stores,
-            isLoading = false,
-            error = error,
-            isAdmin = isAdmin
-        )
-    }.stateIn(
-        viewModelScope,
-        SharingStarted.WhileSubscribed(5000),
-        ShoppingListUiState()
-    )
+    private var householdId: String? = null
 
-    fun setHouseholdId(householdId: String) {
-        if (_householdId.value == householdId) return
-        _householdId.value = householdId
-        observeData(householdId)
+    fun setHouseholdId(hid: String) {
+        if (householdId == hid) return
+        householdId = hid
+        observeData(hid)
     }
 
-    private fun observeData(householdId: String) {
+    private fun observeData(hid: String) {
         viewModelScope.launch {
-            observeItemsUseCase(householdId).collect { items ->
-                _items.value = items
+            observeItemsUseCase(hid).collect { items ->
+                _uiState.update { state ->
+                    state.copy(
+                        itemsByStore = items.groupBy { it.storeId },
+                        isLoading = false
+                    )
+                }
             }
         }
         viewModelScope.launch {
-            getStoresUseCase(householdId).collect { stores ->
-                _stores.value = stores
+            getStoresUseCase(hid).collect { stores ->
+                _uiState.update { state ->
+                    state.copy(stores = stores)
+                }
             }
         }
     }
 
     fun addItem(name: String, storeId: String? = null) {
-        val hid = _householdId.value ?: return
+        val hid = householdId ?: return
         viewModelScope.launch {
             addItemUseCase(hid, name, storeId).onFailure {
-                _error.value = it.message
+                _uiState.update { s -> s.copy(error = it.message) }
             }
         }
     }
@@ -104,16 +83,16 @@ class ShoppingListViewModel @Inject constructor(
     fun editItem(item: ShoppingItem, newName: String) {
         viewModelScope.launch {
             editItemUseCase(item, newName).onFailure {
-                _error.value = it.message
+                _uiState.update { s -> s.copy(error = it.message) }
             }
         }
     }
 
     fun deleteItem(itemId: String) {
-        val hid = _householdId.value ?: return
+        val hid = householdId ?: return
         viewModelScope.launch {
             deleteItemUseCase(hid, itemId).onFailure {
-                _error.value = it.message
+                _uiState.update { s -> s.copy(error = it.message) }
             }
         }
     }
@@ -129,25 +108,27 @@ class ShoppingListViewModel @Inject constructor(
                 updatedAt = System.currentTimeMillis()
             )
             editItemUseCase(updated, updated.name).onFailure {
-                _error.value = it.message
+                _uiState.update { s -> s.copy(error = it.message) }
             }
         }
     }
 
     fun clearError() {
-        _error.value = null
+        _uiState.update { s -> s.copy(error = null) }
     }
 
     fun completeTrip(onSuccess: () -> Unit, onError: (String) -> Unit) {
-        val hid = _householdId.value ?: return
-        val checkedItems = _items.value.filter { it.isChecked }
+        val hid = householdId ?: return
+        val state = _uiState.value
+        val allItems = state.itemsByStore.values.flatten()
+        val checkedItems = allItems.filter { it.isChecked }
 
         if (checkedItems.isEmpty()) {
             onError("No hay items marcados para registrar")
             return
         }
 
-        val storeMap = _stores.value.associateBy { it.id }
+        val storeMap = state.stores.associateBy { it.id }
         val firebaseUser = authDataSource.getCurrentFirebaseUser()
 
         val tripItems = checkedItems.map { item ->
@@ -173,7 +154,6 @@ class ShoppingListViewModel @Inject constructor(
         viewModelScope.launch {
             completeTripUseCase(trip)
                 .onSuccess {
-                    // Uncheck all items that were part of the trip
                     checkedItems.forEach { item ->
                         val unchecked = item.copy(
                             isChecked = false,
