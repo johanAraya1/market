@@ -46,42 +46,12 @@ jobs:
         env:
           GOOGLE_SERVICES_JSON: ${{ secrets.GOOGLE_SERVICES_JSON }}
 
-      - name: Build debug APK (PR)
-        if: github.event_name == 'pull_request'
+      - name: Build debug APK
         run: ./gradlew assembleDebug
 
-      - name: Decode release keystore
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: |
-          echo "${{ secrets.RELEASE_KEYSTORE_BASE64 }}" | base64 -d > app/release.keystore
-          cat > keystore.properties <<EOF
-          storePassword=${{ secrets.KEYSTORE_STORE_PASSWORD }}
-          keyPassword=${{ secrets.KEYSTORE_KEY_PASSWORD }}
-          keyAlias=${{ secrets.KEYSTORE_KEY_ALIAS }}
-          storeFile=../app/release.keystore
-          EOF
-        env:
-          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
-          KEYSTORE_STORE_PASSWORD: ${{ secrets.KEYSTORE_STORE_PASSWORD }}
-          KEYSTORE_KEY_PASSWORD: ${{ secrets.KEYSTORE_KEY_PASSWORD }}
-          KEYSTORE_KEY_ALIAS: ${{ secrets.KEYSTORE_KEY_ALIAS }}
-
-      - name: Build release APK (main)
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: ./gradlew assembleRelease
-
       - name: Upload debug APK
-        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
+          name: market-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
-          retention-days: 7
-
-      - name: Upload release APK
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-apk
-          path: app/build/outputs/apk/release/app-release.apk
           retention-days: 30
