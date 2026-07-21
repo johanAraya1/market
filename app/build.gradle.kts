@@ -5,7 +5,6 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     id("com.google.gms.google-services")
-    id("com.google.firebase.appdist")
     kotlin("kapt")
 }
 
@@ -123,9 +122,4 @@ dependencies {
 
 kapt {
     correctErrorTypes = true
-}
-
-firebaseAppDistribution {
-    serviceAccountFile = rootProject.file("firebase-service-account.json")
-    testers = listOf("johan.araya6@gmail.com")
 }

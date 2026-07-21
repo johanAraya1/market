@@ -56,10 +56,13 @@ jobs:
         run: ./gradlew assembleDebug
 
       - name: Upload to Firebase App Distribution
-        if: env.FIREBASE_SA != ''
-        run: ./gradlew appDistributionUploadDebug
-        env:
-          FIREBASE_SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        if: hashFiles('firebase-service-account.json') != ''
+        uses: wzieba/Firebase-Distribution-Github-Action@v1
+        with:
+          appId: '1:1093102259787:android:ce650c2a70f49f97e807ce'
+          serviceCredentialsFileContent: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          groups: testers
+          file: app/build/outputs/apk/debug/app-debug.apk
 
       - name: Upload debug APK (artifact)
         uses: actions/upload-artifact@v4
