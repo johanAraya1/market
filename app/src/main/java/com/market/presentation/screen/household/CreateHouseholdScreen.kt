@@ -7,29 +7,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.CoroutineExceptionHandler
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 
 private const val TAG = "CreateHousehold"
 
@@ -40,17 +36,57 @@ fun CreateHouseholdScreen(
     modifier: Modifier = Modifier
 ) {
     var householdName by remember { mutableStateOf("") }
-    var logText by remember { mutableStateOf("Esperando...") }
-    var showAlert by remember { mutableStateOf(false) }
-    var alertMsg by remember { mutableStateOf("") }
+    var logText by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(false) }
+    var triggerCreate by remember { mutableStateOf(0) }
 
-    // Use a custom scope with CoroutineExceptionHandler to catch EVERYTHING
-    val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
-        val msg = "HANDLER: ${throwable.javaClass.simpleName}: ${throwable.message}"
-        Log.e(TAG, msg, throwable)
-        logText += "\n$msg"
+    LaunchedEffect(triggerCreate) {
+        if (triggerCreate == 0) return@LaunchedEffect
+        isLoading = true
+        logText = ""
+        try {
+            withContext(Dispatchers.Main) { logText = "1: Starting coroutine..." }
+
+            val user = withContext(Dispatchers.IO) { FirebaseAuth.getInstance().currentUser }
+            withContext(Dispatchers.Main) { logText = "2: user=${user?.uid ?: "NULL"}" }
+
+            if (user == null) {
+                withContext(Dispatchers.Main) { logText = "ERROR: No user"; isLoading = false }
+                return@LaunchedEffect
+            }
+
+            val db = withContext(Dispatchers.IO) { FirebaseFirestore.getInstance() }
+            withContext(Dispatchers.Main) { logText = "3: Firestore OK" }
+
+            val ref = withContext(Dispatchers.IO) { db.collection("households").document() }
+            withContext(Dispatchers.Main) { logText = "4: ref=${ref.id}" }
+
+            withContext(Dispatchers.Main) { logText = "5: calling set().await()..." }
+            withContext(Dispatchers.IO) {
+                withTimeout(15_000L) {
+                    ref.set(
+                        mapOf(
+                            "name" to householdName.trim(),
+                            "createdAt" to System.currentTimeMillis(),
+                            "createdBy" to user.uid
+                        )
+                    ).await()
+                }
+            }
+            withContext(Dispatchers.Main) { logText = "6: Firestore write DONE!" }
+
+            withContext(Dispatchers.Main) {
+                isLoading = false
+                onHouseholdCreated()
+            }
+        } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+            Log.e(TAG, "TIMEOUT", e)
+            withContext(Dispatchers.Main) { logText = "TIMEOUT after 15s — Firestore not responding"; isLoading = false }
+        } catch (e: Throwable) {
+            Log.e(TAG, "ERROR: ${e.javaClass.simpleName}: ${e.message}", e)
+            withContext(Dispatchers.Main) { logText = "ERROR: ${e.javaClass.simpleName}: ${e.message}"; isLoading = false }
+        }
     }
-    val scope = rememberCoroutineScope { SupervisorJob() + exceptionHandler }
 
     Column(
         modifier = modifier
@@ -74,64 +110,28 @@ fun CreateHouseholdScreen(
             onValueChange = { if (it.length <= 50) householdName = it },
             label = { Text("Nombre del hogar") },
             supportingText = { Text("${householdName.length}/50 caracteres") },
+            enabled = !isLoading,
             modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // On-screen log
-        Text(
-            text = logText,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.tertiary
-        )
+        if (logText.isNotEmpty()) {
+            Text(
+                text = logText,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary
+            )
+        }
 
         Spacer(modifier = Modifier.height(24.dp))
 
         Button(
-            onClick = {
-                logText = ""
-                scope.launch {
-                    try {
-                        logText += "1: coroutine started\n"
-
-                        logText += "2: FirebaseAuth.getInstance()...\n"
-                        val auth = FirebaseAuth.getInstance()
-                        val user = auth.currentUser
-                        logText += "3: user=${user?.uid ?: "NULL"}\n"
-
-                        logText += "4: FirebaseFirestore.getInstance()...\n"
-                        val db = FirebaseFirestore.getInstance()
-                        logText += "5: db OK\n"
-
-                        logText += "6: creating doc ref...\n"
-                        val ref = db.collection("households").document()
-                        logText += "7: ref.id=${ref.id}\n"
-
-                        logText += "8: calling .set().await()...\n"
-                        ref.set(
-                            mapOf(
-                                "name" to householdName.trim(),
-                                "createdAt" to System.currentTimeMillis(),
-                                "createdBy" to (user?.uid ?: "")
-                            )
-                        ).await()
-                        logText += "9: .await() returned OK!\n"
-
-                        logText += "10: SUCCESS! navigating...\n"
-                        onHouseholdCreated()
-
-                    } catch (e: Throwable) {
-                        val msg = "CATCH: ${e.javaClass.simpleName}: ${e.message}"
-                        Log.e(TAG, msg, e)
-                        logText += "\n$msg"
-                    }
-                }
-            },
+            onClick = { triggerCreate++ },
             modifier = Modifier.fillMaxWidth(),
-            enabled = householdName.isNotBlank()
+            enabled = householdName.isNotBlank() && !isLoading
         ) {
-            Text("Crear hogar")
+            Text(if (isLoading) "Creando..." else "Crear hogar")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
