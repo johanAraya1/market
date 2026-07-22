@@ -36,55 +36,66 @@ fun CreateHouseholdScreen(
     modifier: Modifier = Modifier
 ) {
     var householdName by remember { mutableStateOf("") }
-    var logText by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
     var triggerCreate by remember { mutableStateOf(0) }
 
     LaunchedEffect(triggerCreate) {
         if (triggerCreate == 0) return@LaunchedEffect
         isLoading = true
-        logText = ""
+        errorMessage = null
         try {
-            withContext(Dispatchers.Main) { logText = "1: Starting coroutine..." }
-
             val user = withContext(Dispatchers.IO) { FirebaseAuth.getInstance().currentUser }
-            withContext(Dispatchers.Main) { logText = "2: user=${user?.uid ?: "NULL"}" }
-
             if (user == null) {
-                withContext(Dispatchers.Main) { logText = "ERROR: No user"; isLoading = false }
+                errorMessage = "No hay usuario autenticado"
+                isLoading = false
                 return@LaunchedEffect
             }
 
             val db = withContext(Dispatchers.IO) { FirebaseFirestore.getInstance() }
-            withContext(Dispatchers.Main) { logText = "3: Firestore OK" }
+            val now = System.currentTimeMillis()
 
-            val ref = withContext(Dispatchers.IO) { db.collection("households").document() }
-            withContext(Dispatchers.Main) { logText = "4: ref=${ref.id}" }
-
-            withContext(Dispatchers.Main) { logText = "5: calling set().await()..." }
+            // Create household document
+            val householdRef = withContext(Dispatchers.IO) { db.collection("households").document() }
             withContext(Dispatchers.IO) {
                 withTimeout(15_000L) {
-                    ref.set(
+                    householdRef.set(
                         mapOf(
                             "name" to householdName.trim(),
-                            "createdAt" to System.currentTimeMillis(),
-                            "createdBy" to user.uid
+                            "createdAt" to now,
+                            "createdBy" to user.uid,
+                            "inviteCode" to null,
+                            "inviteCodeExpiry" to null
                         )
                     ).await()
                 }
             }
-            withContext(Dispatchers.Main) { logText = "6: Firestore write DONE!" }
 
-            withContext(Dispatchers.Main) {
-                isLoading = false
-                onHouseholdCreated()
+            // Add admin member
+            withContext(Dispatchers.IO) {
+                withTimeout(10_000L) {
+                    householdRef.collection("members").document(user.uid).set(
+                        mapOf(
+                            "role" to "ADMIN",
+                            "displayName" to (user.displayName ?: ""),
+                            "joinedAt" to now
+                        )
+                    ).await()
+                }
             }
+
+            Log.d(TAG, "Household created: ${householdRef.id}")
+            isLoading = false
+            onHouseholdCreated()
+
         } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
-            Log.e(TAG, "TIMEOUT", e)
-            withContext(Dispatchers.Main) { logText = "TIMEOUT after 15s — Firestore not responding"; isLoading = false }
+            Log.e(TAG, "Timeout", e)
+            errorMessage = "Tiempo de espera agotado. Verifica tu conexión."
+            isLoading = false
         } catch (e: Throwable) {
-            Log.e(TAG, "ERROR: ${e.javaClass.simpleName}: ${e.message}", e)
-            withContext(Dispatchers.Main) { logText = "ERROR: ${e.javaClass.simpleName}: ${e.message}"; isLoading = false }
+            Log.e(TAG, "Error: ${e.javaClass.simpleName}: ${e.message}", e)
+            errorMessage = "Error: ${e.message ?: e.javaClass.simpleName}"
+            isLoading = false
         }
     }
 
@@ -107,20 +118,23 @@ fun CreateHouseholdScreen(
 
         OutlinedTextField(
             value = householdName,
-            onValueChange = { if (it.length <= 50) householdName = it },
+            onValueChange = {
+                if (it.length <= 50) householdName = it
+                errorMessage = null
+            },
             label = { Text("Nombre del hogar") },
             supportingText = { Text("${householdName.length}/50 caracteres") },
+            isError = errorMessage != null,
             enabled = !isLoading,
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(12.dp))
-
-        if (logText.isNotEmpty()) {
+        errorMessage?.let { error ->
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
-                text = logText,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.tertiary
+                text = error,
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall
             )
         }
 
