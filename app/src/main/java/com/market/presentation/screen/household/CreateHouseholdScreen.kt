@@ -7,25 +7,20 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
-
-private const val TAG = "CreateHousehold"
 
 @Composable
 fun CreateHouseholdScreen(
@@ -34,9 +29,8 @@ fun CreateHouseholdScreen(
     modifier: Modifier = Modifier
 ) {
     var householdName by remember { mutableStateOf("") }
-    var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
+    var debugLog by remember { mutableStateOf("") }
+    var showAlert by remember { mutableStateOf(false) }
 
     Column(
         modifier = modifier
@@ -57,72 +51,72 @@ fun CreateHouseholdScreen(
 
         OutlinedTextField(
             value = householdName,
-            onValueChange = {
-                if (it.length <= 50) householdName = it
-                errorMessage = null
-            },
+            onValueChange = { if (it.length <= 50) householdName = it },
             label = { Text("Nombre del hogar") },
-            supportingText = {
-                Text("${householdName.length}/50 caracteres")
-            },
-            isError = errorMessage != null,
-            enabled = !isLoading,
+            supportingText = { Text("${householdName.length}/50 caracteres") },
             modifier = Modifier.fillMaxWidth()
         )
 
-        errorMessage?.let { error ->
-            Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(16.dp))
+
+        // DEBUG: show log on screen
+        if (debugLog.isNotEmpty()) {
             Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
+                text = debugLog,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.tertiary
             )
+            Spacer(modifier = Modifier.height(8.dp))
         }
 
         Spacer(modifier = Modifier.height(24.dp))
 
         Button(
             onClick = {
-                scope.launch {
-                    isLoading = true
-                    errorMessage = null
-                    try {
-                        val user = FirebaseAuth.getInstance().currentUser
-                        if (user == null) {
-                            errorMessage = "No hay usuario autenticado"
-                            isLoading = false
-                            return@launch
-                        }
+                debugLog = "Paso 1: onClick disparado"
+                try {
+                    debugLog += "\nPaso 2: entrando a try"
+                    android.util.Log.d("CreateHousehold", "Paso 1: onClick")
+                    
+                    // Test 1: Firebase instances
+                    debugLog += "\nPaso 3: FirebaseAuth.getInstance()..."
+                    android.util.Log.d("CreateHousehold", "Paso 2: getting FirebaseAuth")
+                    val auth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                    debugLog += "\nPaso 4: auth OK, uid=${auth.currentUser?.uid}"
+                    android.util.Log.d("CreateHousehold", "Paso 3: auth OK, uid=${auth.currentUser?.uid}")
 
-                        Log.d(TAG, "Step 1: user=${user.uid}")
+                    // Test 2: Firestore instance
+                    debugLog += "\nPaso 5: FirebaseFirestore.getInstance()..."
+                    android.util.Log.d("CreateHousehold", "Paso 4: getting Firestore")
+                    val db = com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                    debugLog += "\nPaso 6: Firestore OK"
+                    android.util.Log.d("CreateHousehold", "Paso 5: Firestore OK")
 
-                        val firestore = FirebaseFirestore.getInstance()
-                        val now = System.currentTimeMillis()
+                    // Test 3: Get document reference
+                    debugLog += "\nPaso 7: creating doc ref..."
+                    android.util.Log.d("CreateHousehold", "Paso 6: creating doc ref")
+                    val ref = db.collection("households").document()
+                    debugLog += "\nPaso 8: ref OK id=${ref.id}"
+                    android.util.Log.d("CreateHousehold", "Paso 7: ref id=${ref.id}")
 
-                        Log.d(TAG, "Step 2: creating household doc")
-                        val ref = firestore.collection("households").document()
-                        ref.set(
-                            mapOf(
-                                "name" to householdName.trim(),
-                                "createdAt" to now,
-                                "createdBy" to user.uid
-                            )
-                        ).await()
-                        Log.d(TAG, "Step 3: household created id=${ref.id}")
+                    // Test 4: Try Firestore write (async)
+                    debugLog += "\nPaso 9: launching coroutine para Firestore write..."
+                    android.util.Log.d("CreateHousehold", "Paso 8: about to launch coroutine")
+                    
+                    showAlert = true
+                    debugLog += "\nPaso 10: DONE - all sync steps OK!"
+                    android.util.Log.d("CreateHousehold", "Paso 9: DONE")
 
-                        onHouseholdCreated()
-                    } catch (e: Throwable) {
-                        Log.e(TAG, "CRASH", e)
-                        errorMessage = "Error ${e.javaClass.simpleName}: ${e.message}"
-                    } finally {
-                        isLoading = false
-                    }
+                } catch (e: Throwable) {
+                    val msg = "ERROR: ${e.javaClass.simpleName}: ${e.message}"
+                    debugLog += "\n$msg"
+                    android.util.Log.e("CreateHousehold", msg, e)
                 }
             },
             modifier = Modifier.fillMaxWidth(),
-            enabled = householdName.isNotBlank() && !isLoading
+            enabled = householdName.isNotBlank()
         ) {
-            Text("Crear hogar")
+            Text("Crear hogar (DEBUG)")
         }
 
         Spacer(modifier = Modifier.height(16.dp))
@@ -133,5 +127,18 @@ fun CreateHouseholdScreen(
         ) {
             Text("¿Tienes un código? Unirse a un hogar")
         }
+    }
+
+    if (showAlert) {
+        AlertDialog(
+            onDismissRequest = { showAlert = false },
+            title = { Text("Debug OK") },
+            text = { Text("Todos los pasos sincrónicos pasaron. El crash es en el coroutine/async.\n\nNombre: $householdName") },
+            confirmButton = {
+                TextButton(onClick = { showAlert = false }) {
+                    Text("OK")
+                }
+            }
+        )
     }
 }
