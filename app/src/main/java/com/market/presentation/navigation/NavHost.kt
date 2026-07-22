@@ -103,8 +103,10 @@ fun MarketNavHost() {
             composable(Route.CreateHousehold.route) {
                 CreateHouseholdScreen(
                     onHouseholdCreated = {
+                        // Navigate to main screen - householdId will be resolved from auth state
                         navController.navigate(Route.ShoppingList.route) {
                             popUpTo(Route.CreateHousehold.route) { inclusive = true }
+                            launchSingleTop = true
                         }
                     },
                     onNavigateToJoin = {

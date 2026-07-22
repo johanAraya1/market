@@ -20,11 +20,10 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.market.data.remote.AuthDataSource
-import com.market.data.remote.HouseholdDataSource
-import com.market.data.repository.HouseholdRepositoryImpl
-import com.market.domain.usecase.household.CreateHouseholdUseCase
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 
 private const val TAG = "CreateHousehold"
 
@@ -88,27 +87,63 @@ fun CreateHouseholdScreen(
                     isLoading = true
                     errorMessage = null
                     try {
-                        val firestore = com.google.firebase.firestore.FirebaseFirestore.getInstance()
-                        val firebaseAuth = com.google.firebase.auth.FirebaseAuth.getInstance()
+                        val currentUser = FirebaseAuth.getInstance().currentUser
+                        if (currentUser == null) {
+                            isLoading = false
+                            errorMessage = "No hay usuario autenticado"
+                            return@launch
+                        }
 
-                        val authDataSource = AuthDataSource(firebaseAuth, firestore)
-                        val householdDataSource = HouseholdDataSource(firestore)
-                        val repository = HouseholdRepositoryImpl(householdDataSource, authDataSource)
-                        val useCase = CreateHouseholdUseCase(repository)
+                        Log.d(TAG, "Creating household: $householdName, uid: ${currentUser.uid}")
 
-                        Log.d(TAG, "Creating household: $householdName")
-                        val result = useCase(householdName)
-                        Log.d(TAG, "Result: ${result.isSuccess}, error: ${result.exceptionOrNull()?.message}")
+                        val firestore = FirebaseFirestore.getInstance()
+                        val now = System.currentTimeMillis()
+
+                        // Step 1: Create household document
+                        val householdRef = firestore.collection("households").document()
+                        Log.d(TAG, "Household ref: ${householdRef.id}")
+
+                        householdRef.set(
+                            mapOf(
+                                "name" to householdName.trim(),
+                                "createdAt" to now,
+                                "createdBy" to currentUser.uid,
+                                "inviteCode" to null,
+                                "inviteCodeExpiry" to null
+                            )
+                        ).await()
+                        Log.d(TAG, "Household created")
+
+                        // Step 2: Add admin member
+                        val memberRef = householdRef.collection("members").document(currentUser.uid)
+                        memberRef.set(
+                            mapOf(
+                                "role" to "ADMIN",
+                                "displayName" to (currentUser.displayName ?: ""),
+                                "joinedAt" to now
+                            )
+                        ).await()
+                        Log.d(TAG, "Member added")
+
+                        // Step 3: Save user doc
+                        val userDoc = firestore.collection("users").document(currentUser.uid)
+                        userDoc.set(
+                            mapOf(
+                                "displayName" to (currentUser.displayName ?: ""),
+                                "email" to (currentUser.email ?: ""),
+                                "photoUrl" to (currentUser.photoUrl?.toString() ?: ""),
+                                "createdAt" to now,
+                                "lastLoginAt" to now,
+                                "householdId" to householdRef.id
+                            ),
+                            com.google.firebase.firestore.SetOptions.merge()
+                        ).await()
+                        Log.d(TAG, "User doc saved")
 
                         isLoading = false
-                        if (result.isSuccess) {
-                            onHouseholdCreated()
-                        } else {
-                            errorMessage = result.exceptionOrNull()?.message
-                                ?: "Error al crear el hogar"
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "Exception creating household", e)
+                        onHouseholdCreated()
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
                         isLoading = false
                         errorMessage = "Error: ${e.message ?: e.javaClass.simpleName}"
                     }
