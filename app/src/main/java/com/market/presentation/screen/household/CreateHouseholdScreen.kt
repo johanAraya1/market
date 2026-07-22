@@ -83,8 +83,41 @@ fun CreateHouseholdScreen(
 
         Button(
             onClick = {
-                // DEBUG TEST: just show status, no Firestore
-                errorMessage = "Boton clickeado! Nombre: '$householdName'"
+                scope.launch {
+                    isLoading = true
+                    errorMessage = null
+                    try {
+                        val user = FirebaseAuth.getInstance().currentUser
+                        if (user == null) {
+                            errorMessage = "No hay usuario autenticado"
+                            isLoading = false
+                            return@launch
+                        }
+
+                        Log.d(TAG, "Step 1: user=${user.uid}")
+
+                        val firestore = FirebaseFirestore.getInstance()
+                        val now = System.currentTimeMillis()
+
+                        Log.d(TAG, "Step 2: creating household doc")
+                        val ref = firestore.collection("households").document()
+                        ref.set(
+                            mapOf(
+                                "name" to householdName.trim(),
+                                "createdAt" to now,
+                                "createdBy" to user.uid
+                            )
+                        ).await()
+                        Log.d(TAG, "Step 3: household created id=${ref.id}")
+
+                        onHouseholdCreated()
+                    } catch (e: Throwable) {
+                        Log.e(TAG, "CRASH", e)
+                        errorMessage = "Error ${e.javaClass.simpleName}: ${e.message}"
+                    } finally {
+                        isLoading = false
+                    }
+                }
             },
             modifier = Modifier.fillMaxWidth(),
             enabled = householdName.isNotBlank() && !isLoading
