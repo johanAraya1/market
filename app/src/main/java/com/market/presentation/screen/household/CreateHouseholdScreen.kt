@@ -83,71 +83,8 @@ fun CreateHouseholdScreen(
 
         Button(
             onClick = {
-                scope.launch {
-                    isLoading = true
-                    errorMessage = null
-                    try {
-                        val currentUser = FirebaseAuth.getInstance().currentUser
-                        if (currentUser == null) {
-                            isLoading = false
-                            errorMessage = "No hay usuario autenticado"
-                            return@launch
-                        }
-
-                        Log.d(TAG, "Creating household: $householdName, uid: ${currentUser.uid}")
-
-                        val firestore = FirebaseFirestore.getInstance()
-                        val now = System.currentTimeMillis()
-
-                        // Step 1: Create household document
-                        val householdRef = firestore.collection("households").document()
-                        Log.d(TAG, "Household ref: ${householdRef.id}")
-
-                        householdRef.set(
-                            mapOf(
-                                "name" to householdName.trim(),
-                                "createdAt" to now,
-                                "createdBy" to currentUser.uid,
-                                "inviteCode" to null,
-                                "inviteCodeExpiry" to null
-                            )
-                        ).await()
-                        Log.d(TAG, "Household created")
-
-                        // Step 2: Add admin member
-                        val memberRef = householdRef.collection("members").document(currentUser.uid)
-                        memberRef.set(
-                            mapOf(
-                                "role" to "ADMIN",
-                                "displayName" to (currentUser.displayName ?: ""),
-                                "joinedAt" to now
-                            )
-                        ).await()
-                        Log.d(TAG, "Member added")
-
-                        // Step 3: Save user doc
-                        val userDoc = firestore.collection("users").document(currentUser.uid)
-                        userDoc.set(
-                            mapOf(
-                                "displayName" to (currentUser.displayName ?: ""),
-                                "email" to (currentUser.email ?: ""),
-                                "photoUrl" to (currentUser.photoUrl?.toString() ?: ""),
-                                "createdAt" to now,
-                                "lastLoginAt" to now,
-                                "householdId" to householdRef.id
-                            ),
-                            com.google.firebase.firestore.SetOptions.merge()
-                        ).await()
-                        Log.d(TAG, "User doc saved")
-
-                        isLoading = false
-                        onHouseholdCreated()
-                    } catch (e: Throwable) {
-                        Log.e(TAG, "FAILED: ${e.javaClass.simpleName}: ${e.message}", e)
-                        isLoading = false
-                        errorMessage = "Error: ${e.message ?: e.javaClass.simpleName}"
-                    }
-                }
+                // DEBUG TEST: just show status, no Firestore
+                errorMessage = "Boton clickeado! Nombre: '$householdName'"
             },
             modifier = Modifier.fillMaxWidth(),
             enabled = householdName.isNotBlank() && !isLoading
