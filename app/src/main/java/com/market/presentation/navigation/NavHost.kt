@@ -1,10 +1,17 @@
 package com.market.presentation.navigation
 
-import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -39,12 +46,12 @@ fun MarketNavHost() {
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                androidx.compose.material3.NavigationBar {
+                NavigationBar {
                     val items = listOf(
-                        Route.ShoppingList to androidx.compose.material.icons.Icons.Filled.Home,
-                        Route.Prices to androidx.compose.material.icons.Icons.Filled.LocalOffer,
-                        Route.History to androidx.compose.material.icons.Icons.Filled.History,
-                        Route.Settings to androidx.compose.material.icons.Icons.Filled.Settings
+                        Route.ShoppingList to Icons.Filled.Home,
+                        Route.Prices to Icons.Filled.LocalOffer,
+                        Route.History to Icons.Filled.History,
+                        Route.Settings to Icons.Filled.Settings
                     )
                     val labels = mapOf(
                         Route.ShoppingList.route to "Lista",
@@ -53,8 +60,8 @@ fun MarketNavHost() {
                         Route.Settings.route to "Ajustes"
                     )
                     items.forEach { (route, icon) ->
-                        androidx.compose.material3.NavigationBarItem(
-                            icon = { androidx.compose.material3.Icon(icon, contentDescription = labels[route.route]) },
+                        NavigationBarItem(
+                            icon = { Icon(icon, contentDescription = labels[route.route]) },
                             label = { Text(labels[route.route] ?: "") },
                             selected = currentDestination?.hierarchy?.any { it.route == route.route } == true,
                             onClick = {
@@ -156,7 +163,6 @@ fun MarketNavHost() {
 
 @Composable
 fun ShoppingListRoute() {
-    // Simple screen without Hilt for now - no crash
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
             text = "Lista de compras",
