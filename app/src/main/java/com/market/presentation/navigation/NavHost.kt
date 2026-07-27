@@ -1,20 +1,16 @@
 package com.market.presentation.navigation
 
+import android.util.Log
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LocalOffer
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -23,18 +19,9 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import androidx.hilt.navigation.compose.hiltViewModel
 import com.market.presentation.screen.auth.LoginScreen
-import com.market.presentation.screen.history.PurchaseHistoryScreen
-import com.market.presentation.screen.history.TripDetailScreen
 import com.market.presentation.screen.household.CreateHouseholdScreen
 import com.market.presentation.screen.household.JoinHouseholdScreen
-import com.market.presentation.screen.list.ShoppingListScreen
-import com.market.presentation.screen.price.PriceComparisonScreen
-import com.market.presentation.viewmodel.PriceComparisonViewModel
-import com.market.presentation.viewmodel.PurchaseHistoryViewModel
-import com.market.presentation.viewmodel.ShoppingListViewModel
-import com.market.presentation.viewmodel.TripDetailViewModel
 
 @Composable
 fun MarketNavHost() {
@@ -52,12 +39,12 @@ fun MarketNavHost() {
     Scaffold(
         bottomBar = {
             if (showBottomBar) {
-                NavigationBar {
+                androidx.compose.material3.NavigationBar {
                     val items = listOf(
-                        Route.ShoppingList to Icons.Filled.Home,
-                        Route.Prices to Icons.Filled.LocalOffer,
-                        Route.History to Icons.Filled.History,
-                        Route.Settings to Icons.Filled.Settings
+                        Route.ShoppingList to androidx.compose.material.icons.Icons.Filled.Home,
+                        Route.Prices to androidx.compose.material.icons.Icons.Filled.LocalOffer,
+                        Route.History to androidx.compose.material.icons.Icons.Filled.History,
+                        Route.Settings to androidx.compose.material.icons.Icons.Filled.Settings
                     )
                     val labels = mapOf(
                         Route.ShoppingList.route to "Lista",
@@ -66,8 +53,8 @@ fun MarketNavHost() {
                         Route.Settings.route to "Ajustes"
                     )
                     items.forEach { (route, icon) ->
-                        NavigationBarItem(
-                            icon = { Icon(icon, contentDescription = labels[route.route]) },
+                        androidx.compose.material3.NavigationBarItem(
+                            icon = { androidx.compose.material3.Icon(icon, contentDescription = labels[route.route]) },
                             label = { Text(labels[route.route] ?: "") },
                             selected = currentDestination?.hierarchy?.any { it.route == route.route } == true,
                             onClick = {
@@ -103,7 +90,6 @@ fun MarketNavHost() {
             composable(Route.CreateHousehold.route) {
                 CreateHouseholdScreen(
                     onHouseholdCreated = {
-                        // Navigate to main screen - householdId will be resolved from auth state
                         navController.navigate(Route.ShoppingList.route) {
                             popUpTo(Route.CreateHousehold.route) { inclusive = true }
                             launchSingleTop = true
@@ -139,31 +125,15 @@ fun MarketNavHost() {
             }
 
             composable(Route.ShoppingList.route) {
-                val viewModel: ShoppingListViewModel = hiltViewModel()
-                // TODO: Replace with real householdId from auth/household state
-                ShoppingListScreen(
-                    viewModel = viewModel,
-                    householdId = ""
-                )
+                ShoppingListRoute()
             }
 
             composable(Route.Prices.route) {
-                val viewModel: PriceComparisonViewModel = hiltViewModel()
-                PriceComparisonScreen(
-                    viewModel = viewModel,
-                    householdId = ""
-                )
+                PlaceholderScreen("Precios")
             }
 
             composable(Route.History.route) {
-                val viewModel: PurchaseHistoryViewModel = hiltViewModel()
-                PurchaseHistoryScreen(
-                    viewModel = viewModel,
-                    householdId = "",
-                    onTripClick = { tripId ->
-                        navController.navigate(Route.TripDetail.createRoute(tripId))
-                    }
-                )
+                PlaceholderScreen("Historial")
             }
 
             composable(
@@ -174,21 +144,33 @@ fun MarketNavHost() {
                     }
                 )
             ) {
-                val viewModel: TripDetailViewModel = hiltViewModel()
-                TripDetailScreen(
-                    viewModel = viewModel,
-                    householdId = "",
-                    isAdmin = true,
-                    onBack = { navController.popBackStack() }
-                )
+                PlaceholderScreen("Detalle de compra")
             }
 
             composable(Route.Settings.route) {
-                com.market.presentation.component.EmptyState(
-                    title = "Ajustes",
-                    subtitle = "Configuración del hogar"
-                )
+                PlaceholderScreen("Ajustes")
             }
         }
+    }
+}
+
+@Composable
+fun ShoppingListRoute() {
+    // Simple screen without Hilt for now - no crash
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text = "Lista de compras",
+            style = MaterialTheme.typography.headlineMedium
+        )
+    }
+}
+
+@Composable
+fun PlaceholderScreen(title: String) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.headlineMedium
+        )
     }
 }
