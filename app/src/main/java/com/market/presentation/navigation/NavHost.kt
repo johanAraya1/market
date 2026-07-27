@@ -1,24 +1,42 @@
 package com.market.presentation.navigation
 
-import android.util.Log
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -26,13 +44,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
-import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.navArgument
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
 import com.market.presentation.screen.auth.LoginScreen
 import com.market.presentation.screen.household.CreateHouseholdScreen
 import com.market.presentation.screen.household.JoinHouseholdScreen
-import com.market.presentation.viewmodel.ShoppingListViewModel
+import kotlinx.coroutines.tasks.await
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MarketNavHost() {
     val navController = rememberNavController()
@@ -134,12 +154,9 @@ fun MarketNavHost() {
                 )
             }
 
+            // Shopping list — direct Firestore, no Hilt ViewModel
             composable(Route.ShoppingList.route) {
-                val viewModel: ShoppingListViewModel = hiltViewModel()
-                com.market.presentation.screen.list.ShoppingListScreen(
-                    viewModel = viewModel,
-                    householdId = ""
-                )
+                ShoppingListDirect()
             }
 
             composable(Route.Prices.route) {
@@ -152,11 +169,7 @@ fun MarketNavHost() {
 
             composable(
                 route = Route.TripDetail.route,
-                arguments = listOf(
-                    navArgument("tripId") {
-                        type = NavType.StringType
-                    }
-                )
+                arguments = listOf(navArgument("tripId") { type = NavType.StringType })
             ) {
                 PlaceholderScreen("Detalle de compra")
             }
@@ -168,12 +181,150 @@ fun MarketNavHost() {
     }
 }
 
+/**
+ * Shopping list that talks directly to Firestore — no Hilt, no ViewModel.
+ * We'll refactor to proper architecture once the core flow works.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ShoppingListDirect() {
+    val items = remember { mutableStateListOf<Map<String, Any?>>() }
+    var householdId by remember { mutableStateOf<String?>(null) }
+    var householdName by remember { mutableStateOf("") }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var newItemName by remember { mutableStateOf("") }
+    var isLoading by remember { mutableStateOf(true) }
+
+    // Find the user's household
+    LaunchedEffect(Unit) {
+        try {
+            val user = FirebaseAuth.getInstance().currentUser ?: return@LaunchedEffect
+            val db = FirebaseFirestore.getInstance()
+
+            // Check user doc for householdId
+            val userDoc = db.collection("users").document(user.uid).get().await()
+            val hid = userDoc.getString("householdId")
+            if (hid != null) {
+                householdId = hid
+                val hhDoc = db.collection("households").document(hid).get().await()
+                householdName = hhDoc.getString("name") ?: ""
+            }
+
+            isLoading = false
+        } catch (e: Throwable) {
+            isLoading = false
+        }
+    }
+
+    // Listen for items once we have a householdId
+    LaunchedEffect(householdId) {
+        val hid = householdId ?: return@LaunchedEffect
+        val listener = FirebaseFirestore.getInstance()
+            .collection("households").document(hid).collection("items")
+            .addSnapshotListener { snapshot, _ ->
+                items.clear()
+                snapshot?.documents?.forEach { doc ->
+                    val data = doc.data?.toMutableMap() ?: mutableMapOf()
+                    data["id"] = doc.id
+                    items.add(data)
+                }
+            }
+        // Note: we don't remove listener here for simplicity
+    }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text(if (householdName.isNotEmpty()) "Lista: $householdName" else "Mi Lista") })
+        },
+        floatingActionButton = {
+            if (householdId != null) {
+                FloatingActionButton(onClick = { showAddDialog = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = "Agregar")
+                }
+            }
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center
+        ) {
+            when {
+                isLoading -> {
+                    Text("Cargando...", style = MaterialTheme.typography.bodyLarge)
+                }
+                householdId == null -> {
+                    Text("No perteneces a ningún hogar", style = MaterialTheme.typography.bodyLarge)
+                }
+                items.isEmpty() -> {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Tu lista está vacía", style = MaterialTheme.typography.headlineSmall)
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text("Toca + para agregar productos", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+                else -> {
+                    LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                        items(items) { item ->
+                            val name = item["name"] as? String ?: "Sin nombre"
+                            val checked = item["isChecked"] as? Boolean ?: false
+                            Text(
+                                text = if (checked) "✓ $name" else name,
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                style = MaterialTheme.typography.bodyLarge
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false; newItemName = "" },
+            title = { Text("Agregar producto") },
+            text = {
+                OutlinedTextField(
+                    value = newItemName,
+                    onValueChange = { newItemName = it },
+                    label = { Text("Nombre del producto") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        val hid = householdId ?: return@TextButton
+                        val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
+                        if (newItemName.isNotBlank()) {
+                            FirebaseFirestore.getInstance()
+                                .collection("households").document(hid).collection("items")
+                                .add(
+                                    mapOf(
+                                        "name" to newItemName.trim(),
+                                        "isChecked" to false,
+                                        "createdBy" to user.uid,
+                                        "createdAt" to System.currentTimeMillis()
+                                    )
+                                )
+                            newItemName = ""
+                            showAddDialog = false
+                        }
+                    },
+                    enabled = newItemName.isNotBlank()
+                ) { Text("Agregar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false; newItemName = "" }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
 @Composable
 fun PlaceholderScreen(title: String) {
     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = title,
-            style = MaterialTheme.typography.headlineMedium
-        )
+        Text(text = title, style = MaterialTheme.typography.headlineMedium)
     }
 }
