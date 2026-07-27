@@ -1,5 +1,6 @@
 package com.market.presentation.navigation
 
+import android.util.Log
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -25,10 +26,12 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.hilt.navigation.hiltViewModel
 import androidx.navigation.navArgument
 import com.market.presentation.screen.auth.LoginScreen
 import com.market.presentation.screen.household.CreateHouseholdScreen
 import com.market.presentation.screen.household.JoinHouseholdScreen
+import com.market.presentation.viewmodel.ShoppingListViewModel
 
 @Composable
 fun MarketNavHost() {
@@ -132,7 +135,11 @@ fun MarketNavHost() {
             }
 
             composable(Route.ShoppingList.route) {
-                ShoppingListRoute()
+                val viewModel: ShoppingListViewModel = hiltViewModel()
+                com.market.presentation.screen.list.ShoppingListScreen(
+                    viewModel = viewModel,
+                    householdId = ""
+                )
             }
 
             composable(Route.Prices.route) {
@@ -158,16 +165,6 @@ fun MarketNavHost() {
                 PlaceholderScreen("Ajustes")
             }
         }
-    }
-}
-
-@Composable
-fun ShoppingListRoute() {
-    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text(
-            text = "Lista de compras",
-            style = MaterialTheme.typography.headlineMedium
-        )
     }
 }
 
