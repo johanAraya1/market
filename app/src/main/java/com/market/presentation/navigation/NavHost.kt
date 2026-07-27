@@ -160,22 +160,23 @@ fun MarketNavHost() {
             }
 
             composable(Route.Prices.route) {
-                PlaceholderScreen("Precios")
+                PricesDirect()
             }
 
             composable(Route.History.route) {
-                PlaceholderScreen("Historial")
+                HistoryDirect()
             }
 
             composable(
                 route = Route.TripDetail.route,
                 arguments = listOf(navArgument("tripId") { type = NavType.StringType })
-            ) {
-                PlaceholderScreen("Detalle de compra")
+            ) { backStackEntry ->
+                val tripId = backStackEntry.arguments?.getString("tripId") ?: ""
+                TripDetailDirect(tripId)
             }
 
             composable(Route.Settings.route) {
-                PlaceholderScreen("Ajustes")
+                SettingsDirect()
             }
         }
     }
@@ -319,6 +320,267 @@ fun ShoppingListDirect() {
                 TextButton(onClick = { showAddDialog = false; newItemName = "" }) { Text("Cancelar") }
             }
         )
+    }
+}
+
+// ─── HELPER: get householdId for current user ───
+@Composable
+fun rememberHouseholdId(): String? {
+    var hid by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        val user = FirebaseAuth.getInstance().currentUser ?: return@LaunchedEffect
+        val doc = FirebaseFirestore.getInstance()
+            .collection("users").document(user.uid).get().await()
+        hid = doc.getString("householdId")
+    }
+    return hid
+}
+
+// ─── PRECIOS ───
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun PricesDirect() {
+    val householdId = rememberHouseholdId()
+    val prices = remember { mutableStateListOf<Map<String, Any?>>() }
+    var showAddDialog by remember { mutableStateOf(false) }
+    var itemName by remember { mutableStateOf("") }
+    var storeName by remember { mutableStateOf("") }
+    var priceText by remember { mutableStateOf("") }
+
+    LaunchedEffect(householdId) {
+        val hid = householdId ?: return@LaunchedEffect
+        val snapshot = FirebaseFirestore.getInstance()
+            .collection("households").document(hid).collection("prices")
+            .orderBy("createdAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .get().await()
+        prices.clear()
+        snapshot.documents.forEach { doc ->
+            val data = doc.data?.toMutableMap() ?: mutableMapOf()
+            data["id"] = doc.id
+            prices.add(data)
+        }
+    }
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Precios") }) },
+        floatingActionButton = {
+            if (householdId != null) {
+                FloatingActionButton(onClick = { showAddDialog = true }) {
+                    Icon(Icons.Filled.Add, contentDescription = "Agregar precio")
+                }
+            }
+        }
+    ) { padding ->
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center
+        ) {
+            when {
+                householdId == null -> Text("No hay hogar seleccionado")
+                prices.isEmpty() -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("Sin precios guardados", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text("Toca + para comparar precios", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                else -> LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                    items(prices) { price ->
+                        val pName = price["itemName"] as? String ?: "?"
+                        val store = price["storeName"] as? String ?: "?"
+                        val pValue = (price["price"] as? Number)?.toDouble() ?: 0.0
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                            Text(pName, style = MaterialTheme.typography.titleMedium)
+                            Text("$store — ₡${String.format("%.0f", pValue)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if (showAddDialog) {
+        AlertDialog(
+            onDismissRequest = { showAddDialog = false; itemName = ""; storeName = ""; priceText = "" },
+            title = { Text("Agregar precio") },
+            text = {
+                Column {
+                    OutlinedTextField(value = itemName, onValueChange = { itemName = it }, label = { Text("Producto") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = storeName, onValueChange = { storeName = it }, label = { Text("Tienda") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    Spacer(modifier = Modifier.height(8.dp))
+                    OutlinedTextField(value = priceText, onValueChange = { priceText = it }, label = { Text("Precio ₡") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val hid = householdId ?: return@TextButton
+                    val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
+                    val price = priceText.toDoubleOrNull()
+                    if (itemName.isNotBlank() && storeName.isNotBlank() && price != null) {
+                        FirebaseFirestore.getInstance()
+                            .collection("households").document(hid).collection("prices")
+                            .add(mapOf(
+                                "itemName" to itemName.trim(),
+                                "storeName" to storeName.trim(),
+                                "price" to price,
+                                "createdBy" to user.uid,
+                                "createdAt" to System.currentTimeMillis()
+                            ))
+                        itemName = ""; storeName = ""; priceText = ""; showAddDialog = false
+                    }
+                }, enabled = itemName.isNotBlank() && storeName.isNotBlank() && priceText.toDoubleOrNull() != null) { Text("Guardar") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddDialog = false; itemName = ""; storeName = ""; priceText = "" }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
+// ─── HISTORIAL ───
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HistoryDirect() {
+    val householdId = rememberHouseholdId()
+    val trips = remember { mutableStateListOf<Map<String, Any?>>() }
+
+    LaunchedEffect(householdId) {
+        val hid = householdId ?: return@LaunchedEffect
+        val snapshot = FirebaseFirestore.getInstance()
+            .collection("households").document(hid).collection("trips")
+            .orderBy("completedAt", com.google.firebase.firestore.Query.Direction.DESCENDING)
+            .get().await()
+        trips.clear()
+        snapshot.documents.forEach { doc ->
+            val data = doc.data?.toMutableMap() ?: mutableMapOf()
+            data["id"] = doc.id
+            trips.add(data)
+        }
+    }
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Historial de compras") }) }
+    ) { padding ->
+        Box(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentAlignment = Alignment.Center
+        ) {
+            when {
+                householdId == null -> Text("No hay hogar seleccionado")
+                trips.isEmpty() -> Text("Sin compras registradas", style = MaterialTheme.typography.headlineSmall)
+                else -> LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                    items(trips) { trip ->
+                        val name = trip["name"] as? String ?: "Compra"
+                        val completedAt = (trip["completedAt"] as? Number)?.toLong() ?: 0L
+                        val total = (trip["total"] as? Number)?.toDouble() ?: 0.0
+                        val dateStr = if (completedAt > 0) {
+                            val sdf = java.text.SimpleDateFormat("dd/MM/yyyy", java.util.Locale.getDefault())
+                            sdf.format(java.util.Date(completedAt))
+                        } else "?"
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                            Text(name, style = MaterialTheme.typography.titleMedium)
+                            Text("📅 $dateStr — ₡${String.format("%.0f", total)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── TRIP DETAIL ───
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TripDetailDirect(tripId: String) {
+    val householdId = rememberHouseholdId()
+    val items = remember { mutableStateListOf<Map<String, Any?>>() }
+    var tripName by remember { mutableStateOf("Compra") }
+
+    LaunchedEffect(householdId, tripId) {
+        val hid = householdId ?: return@LaunchedEffect
+        val db = FirebaseFirestore.getInstance()
+        val tripDoc = db.collection("households").document(hid).collection("trips").document(tripId).get().await()
+        tripName = tripDoc.getString("name") ?: "Compra"
+
+        val snapshot = db.collection("households").document(hid).collection("trips").document(tripId)
+            .collection("items").get().await()
+        items.clear()
+        snapshot.documents.forEach { doc ->
+            val data = doc.data?.toMutableMap() ?: mutableMapOf()
+            data["id"] = doc.id
+            items.add(data)
+        }
+    }
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text(tripName) }) }
+    ) { padding ->
+        Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+            when {
+                householdId == null -> Text("No hay hogar")
+                items.isEmpty() -> Text("Sin productos en esta compra")
+                else -> LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
+                    items(items) { item ->
+                        val name = item["name"] as? String ?: "?"
+                        val price = (item["price"] as? Number)?.toDouble() ?: 0.0
+                        Column(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
+                            Text(name, style = MaterialTheme.typography.titleMedium)
+                            if (price > 0) Text("₡${String.format("%.0f", price)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ─── AJUSTES ───
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsDirect() {
+    val user = FirebaseAuth.getInstance().currentUser
+    val householdId = rememberHouseholdId()
+    var householdName by remember { mutableStateOf("") }
+    var inviteCode by remember { mutableStateOf("") }
+
+    LaunchedEffect(householdId) {
+        val hid = householdId ?: return@LaunchedEffect
+        val doc = FirebaseFirestore.getInstance().collection("households").document(hid).get().await()
+        householdName = doc.getString("name") ?: ""
+        inviteCode = doc.getString("inviteCode") ?: ""
+    }
+
+    Scaffold(
+        topBar = { TopAppBar(title = { Text("Ajustes") }) }
+    ) { padding ->
+        Column(modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)) {
+            // User info
+            Text("Tu cuenta", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(user?.displayName ?: "", style = MaterialTheme.typography.bodyLarge)
+            Text(user?.email ?: "", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Household info
+            Text("Hogar", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(8.dp))
+            if (householdName.isNotEmpty()) {
+                Text(householdName, style = MaterialTheme.typography.bodyLarge)
+            }
+            if (inviteCode.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text("Código de invitación: $inviteCode", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Logout
+            TextButton(onClick = {
+                FirebaseAuth.getInstance().signOut()
+            }) {
+                Text("Cerrar sesión", color = MaterialTheme.colorScheme.error)
+            }
+        }
     }
 }
 
