@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import java.util.UUID
 
 private const val TAG = "CreateHousehold"
 
@@ -55,7 +56,8 @@ fun CreateHouseholdScreen(
             val db = withContext(Dispatchers.IO) { FirebaseFirestore.getInstance() }
             val now = System.currentTimeMillis()
 
-            // Create household document
+            // Create household document with invite code
+            val inviteCode = UUID.randomUUID().toString().take(6).uppercase()
             val householdRef = withContext(Dispatchers.IO) { db.collection("households").document() }
             withContext(Dispatchers.IO) {
                 withTimeout(15_000L) {
@@ -64,8 +66,7 @@ fun CreateHouseholdScreen(
                             "name" to householdName.trim(),
                             "createdAt" to now,
                             "createdBy" to user.uid,
-                            "inviteCode" to null,
-                            "inviteCodeExpiry" to null
+                            "inviteCode" to inviteCode
                         )
                     ).await()
                 }

@@ -335,6 +335,9 @@ fun ListDetailScreen(listId: String) {
     var editingItem by remember { mutableStateOf<Map<String, Any?>?>(null) }
     var editName by remember { mutableStateOf("") }
 
+    // Delete confirmation state
+    var deletingItem by remember { mutableStateOf<Map<String, Any?>?>(null) }
+
     // Load list name
     LaunchedEffect(householdId, listId) {
         val hid = householdId ?: return@LaunchedEffect
@@ -426,7 +429,7 @@ fun ListDetailScreen(listId: String) {
 
                                 // Delete
                                 IconButton(onClick = {
-                                    itemsPath.collection("items").document(itemId).delete()
+                                    deletingItem = item
                                 }) {
                                     Icon(Icons.Filled.Delete, contentDescription = "Eliminar", tint = MaterialTheme.colorScheme.error)
                                 }
@@ -510,6 +513,34 @@ fun ListDetailScreen(listId: String) {
             },
             dismissButton = {
                 TextButton(onClick = { editingItem = null; editName = "" }) { Text("Cancelar") }
+            }
+        )
+    }
+
+    // ── Delete confirmation dialog ──
+    if (deletingItem != null) {
+        val itemName = deletingItem?.get("name") as? String ?: ""
+        AlertDialog(
+            onDismissRequest = { deletingItem = null },
+            title = { Text("Eliminar producto") },
+            text = { Text("¿Deseas eliminar \"$itemName\" de la lista?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val hid = householdId ?: return@TextButton
+                    val itemId = deletingItem?.get("id") as? String ?: return@TextButton
+                    db.collection("households").document(hid)
+                        .collection("lists").document(listId)
+                        .collection("items").document(itemId).delete()
+                    // Update itemCount
+                    val newCount = (items.size - 1).coerceAtLeast(0)
+                    db.collection("households").document(hid)
+                        .collection("lists").document(listId)
+                        .update("itemCount", newCount)
+                    deletingItem = null
+                }) { Text("Eliminar", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingItem = null }) { Text("Cancelar") }
             }
         )
     }
