@@ -611,7 +611,14 @@ fun HogarScreen() {
         val db = FirebaseFirestore.getInstance()
         val doc = db.collection("households").document(hid).get().await()
         householdName = doc.getString("name") ?: ""
-        inviteCode = doc.getString("inviteCode") ?: ""
+
+        var code = doc.getString("inviteCode")
+        if (code.isNullOrBlank()) {
+            // Generate invite code for existing households
+            code = java.util.UUID.randomUUID().toString().take(6).uppercase()
+            doc.reference.update("inviteCode", code)
+        }
+        inviteCode = code
 
         // Load members
         val membersSnap = doc.reference.collection("members").get().await()
@@ -663,7 +670,7 @@ fun HogarScreen() {
                     Text("Copiado", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                 }
             } else {
-                Text("Generando código...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text("Cargando...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             Spacer(modifier = Modifier.height(32.dp))
