@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
@@ -178,7 +179,7 @@ fun MarketNavHost() {
                 arguments = listOf(navArgument("tripId") { type = NavType.StringType })
             ) { backStackEntry ->
                 val listId = backStackEntry.arguments?.getString("tripId") ?: ""
-                ListDetailScreen(listId = listId)
+                ListDetailScreen(listId = listId, onBack = { navController.popBackStack() })
             }
 
             composable(Route.Prices.route) { PricesDirect() }
@@ -324,7 +325,7 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
 // ─────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ListDetailScreen(listId: String) {
+fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
     val householdId = rememberHouseholdId()
     val items = remember { mutableStateListOf<Map<String, Any?>>() }
     var listName by remember { mutableStateOf("Lista") }
@@ -367,7 +368,16 @@ fun ListDetailScreen(listId: String) {
     val db = FirebaseFirestore.getInstance()
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text(listName) }) },
+        topBar = {
+            TopAppBar(
+                title = { Text(listName) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Volver")
+                    }
+                }
+            )
+        },
         floatingActionButton = {
             FloatingActionButton(onClick = { showAddDialog = true }) {
                 Icon(Icons.Filled.Add, contentDescription = "Agregar producto")
@@ -698,6 +708,7 @@ fun HistoryDirect() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDirect() {
+    val context = androidx.compose.ui.platform.LocalContext.current
     val user = FirebaseAuth.getInstance().currentUser
     val householdId = rememberHouseholdId()
     var householdName by remember { mutableStateOf("") }
@@ -722,9 +733,34 @@ fun SettingsDirect() {
             Text("Hogar", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(8.dp))
             if (householdName.isNotEmpty()) Text(householdName, style = MaterialTheme.typography.bodyLarge)
+
             if (inviteCode.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Código de invitación", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(4.dp))
-                Text("Código de invitación: $inviteCode", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        inviteCode,
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Spacer(modifier = Modifier.weight(1f))
+                    // Copy button
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                        val clip = android.content.ClipData.newPlainText("invite code", inviteCode)
+                        clipboard.setPrimaryClip(clip)
+                    }) { Text("Copiar") }
+                    // Share button
+                    TextButton(onClick = {
+                        val sendIntent = android.content.Intent().apply {
+                            action = android.content.Intent.ACTION_SEND
+                            putExtra(android.content.Intent.EXTRA_TEXT, "Unite a mi hogar \"$householdName\" con el código: $inviteCode")
+                            type = "text/plain"
+                        }
+                        context.startActivity(android.content.Intent.createChooser(sendIntent, null))
+                    }) { Text("Compartir") }
+                }
             }
 
             Spacer(modifier = Modifier.height(24.dp))
