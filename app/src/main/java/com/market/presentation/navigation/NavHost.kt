@@ -116,8 +116,24 @@ fun MarketNavHost() {
             composable(Route.Login.route) {
                 LoginScreen(
                     onSignInSuccess = {
-                        navController.navigate(Route.CreateHousehold.route) {
+                        navController.navigate(Route.PostLogin.route) {
                             popUpTo(Route.Login.route) { inclusive = true }
+                        }
+                    }
+                )
+            }
+
+            // ── Post-login: check household and redirect ──
+            composable(Route.PostLogin.route) {
+                PostLoginRedirect(
+                    onGoToMain = {
+                        navController.navigate(Route.ShoppingList.route) {
+                            popUpTo(Route.PostLogin.route) { inclusive = true }
+                        }
+                    },
+                    onGoToCreate = {
+                        navController.navigate(Route.CreateHousehold.route) {
+                            popUpTo(Route.PostLogin.route) { inclusive = true }
                         }
                     }
                 )
@@ -198,6 +214,25 @@ fun rememberHouseholdId(): String? {
 
 private fun formatDate(ms: Long): String =
     SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(ms))
+
+@Composable
+fun PostLoginRedirect(onGoToMain: () -> Unit, onGoToCreate: () -> Unit) {
+    var checked by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        val user = FirebaseAuth.getInstance().currentUser ?: return@LaunchedEffect
+        val doc = FirebaseFirestore.getInstance()
+            .collection("users").document(user.uid).get().await()
+        val hid = doc.getString("householdId")
+        checked = true
+        if (hid != null) onGoToMain()
+        else onGoToCreate()
+    }
+    if (!checked) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Verificando cuenta...", style = MaterialTheme.typography.bodyLarge)
+        }
+    }
+}
 
 // ─────────────────────────────────────────────────────────────
 //  SCREEN: MIS LISTAS

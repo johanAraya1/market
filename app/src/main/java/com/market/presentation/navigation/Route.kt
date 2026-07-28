@@ -10,6 +10,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 
 sealed class Route(val route: String) {
     data object Login : Route("login")
+    data object PostLogin : Route("post_login")
     data object CreateHousehold : Route("create_household")
     data object JoinHousehold : Route("join_household?code={code}") {
         fun createRoute(code: String = "") = "join_household?code=$code"

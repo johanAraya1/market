@@ -41,6 +41,14 @@ fun CreateHouseholdScreen(
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var triggerCreate by remember { mutableStateOf(0) }
 
+    // Auto-fill default name from user
+    LaunchedEffect(Unit) {
+        val user = FirebaseAuth.getInstance().currentUser
+        if (householdName.isBlank() && user?.displayName != null) {
+            householdName = "Hogar de ${user.displayName}"
+        }
+    }
+
     LaunchedEffect(triggerCreate) {
         if (triggerCreate == 0) return@LaunchedEffect
         isLoading = true
