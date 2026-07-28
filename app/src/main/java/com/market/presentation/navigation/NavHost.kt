@@ -78,6 +78,19 @@ fun MarketNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
+    // Logout listener — redirect to login when auth state changes
+    var isAuthenticated by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        FirebaseAuth.getInstance().addAuthStateListener { auth ->
+            isAuthenticated = auth.currentUser != null
+        }
+    }
+    LaunchedEffect(isAuthenticated) {
+        if (!isAuthenticated && currentDestination?.route != Route.Login.route) {
+            navController.navigate(Route.Login.route) { popUpTo(0) { inclusive = true } }
+        }
+    }
+
     val showBottomBar = currentDestination?.route in listOf(
         Route.ShoppingList.route,
         Route.Hogar.route,
@@ -469,11 +482,89 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp)
                             ) {
                                 Text("Cerrar lista")
-                            }
-                        }
-                    }
                 }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // Create new household
+            var showNewHouseholdDialog by remember { mutableStateOf(false) }
+            TextButton(onClick = { showNewHouseholdDialog = true }) {
+                Text("Crear nuevo hogar", color = MaterialTheme.colorScheme.primary)
+            }
+            Text(
+                "Al crear un nuevo hogar tu hogar actual quedará sin administrador",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (showNewHouseholdDialog) {
+                NewHouseholdDialog(
+                    onDismiss = { showNewHouseholdDialog = false },
+                    onCreated = {
+                        showNewHouseholdDialog = false
+                        refreshTrigger++
+                    }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun NewHouseholdDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    val user = FirebaseAuth.getInstance().currentUser
+    LaunchedEffect(Unit) {
+        if (name.isBlank() && user?.displayName != null) {
+            name = "Hogar de ${user.displayName}"
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuevo hogar") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Nombre del hogar") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
+                if (name.isBlank()) return@TextButton
+                val db = FirebaseFirestore.getInstance()
+                val now = System.currentTimeMillis()
+                val inviteCode = java.util.UUID.randomUUID().toString().take(6).uppercase()
+                val newHid = db.collection("households").document()
+
+                newHid.set(mapOf(
+                    "name" to name.trim(),
+                    "createdAt" to now,
+                    "createdBy" to user.uid,
+                    "inviteCode" to inviteCode
+                )).addOnSuccessListener {
+                    newHid.collection("members").document(user.uid).set(mapOf(
+                        "role" to "ADMIN",
+                        "displayName" to (user.displayName ?: ""),
+                        "joinedAt" to now
+                    ))
+                    // Update user's householdId
+                    db.collection("users").document(user.uid).update("householdId", newHid.id)
+                    onDismiss()
+                    onCreated()
+                }
+            }, enabled = name.isNotBlank()) { Text("Crear") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
+}
         }
     }
 
@@ -640,8 +731,10 @@ fun HogarScreen() {
     var inviteCode by remember { mutableStateOf("") }
     val members = remember { mutableStateListOf<Map<String, Any?>>() }
     var copied by remember { mutableIntStateOf(0) }
+    var refreshTrigger by remember { mutableIntStateOf(0) }
 
-    LaunchedEffect(householdId) {
+    // Re-fetch when refreshTrigger changes
+    LaunchedEffect(householdId, refreshTrigger) {
         val hid = householdId ?: return@LaunchedEffect
         val db = FirebaseFirestore.getInstance()
         val doc = db.collection("households").document(hid).get().await()
