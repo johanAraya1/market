@@ -1,5 +1,9 @@
 package com.market.presentation.navigation
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,15 +17,12 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LocalOffer
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.HorizontalDivider
@@ -32,19 +33,20 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavDestination.Companion.hierarchy
@@ -78,6 +80,7 @@ fun MarketNavHost() {
 
     val showBottomBar = currentDestination?.route in listOf(
         Route.ShoppingList.route,
+        Route.Hogar.route,
         Route.Prices.route,
         Route.History.route,
         Route.Settings.route
@@ -87,28 +90,14 @@ fun MarketNavHost() {
         bottomBar = {
             if (showBottomBar) {
                 NavigationBar {
-                    val items = listOf(
-                        Route.ShoppingList to Icons.Filled.Home,
-                        Route.Prices to Icons.Filled.LocalOffer,
-                        Route.History to Icons.Filled.History,
-                        Route.Settings to Icons.Filled.Settings
-                    )
-                    val labels = mapOf(
-                        Route.ShoppingList.route to "Listas",
-                        Route.Prices.route to "Precios",
-                        Route.History.route to "Historial",
-                        Route.Settings.route to "Ajustes"
-                    )
-                    items.forEach { (route, icon) ->
+                    bottomNavItems.forEach { item ->
                         NavigationBarItem(
-                            icon = { Icon(icon, contentDescription = labels[route.route]) },
-                            label = { Text(labels[route.route] ?: "") },
-                            selected = currentDestination?.hierarchy?.any { it.route == route.route } == true,
+                            icon = { Icon(item.icon, contentDescription = item.label) },
+                            label = { Text(item.label) },
+                            selected = currentDestination?.hierarchy?.any { it.route == item.route.route } == true,
                             onClick = {
-                                navController.navigate(route.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
+                                navController.navigate(item.route.route) {
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
@@ -142,9 +131,7 @@ fun MarketNavHost() {
                             launchSingleTop = true
                         }
                     },
-                    onNavigateToJoin = {
-                        navController.navigate(Route.JoinHousehold.createRoute())
-                    }
+                    onNavigateToJoin = { navController.navigate(Route.JoinHousehold.createRoute()) }
                 )
             }
 
@@ -173,7 +160,12 @@ fun MarketNavHost() {
                 )
             }
 
-            // ── DETALLE DE UNA LISTA ──
+            // ── MI HOGAR ──
+            composable(Route.Hogar.route) {
+                HogarScreen()
+            }
+
+            // ── DETALLE DE LISTA ──
             composable(
                 route = Route.TripDetail.route,
                 arguments = listOf(navArgument("tripId") { type = NavType.StringType })
@@ -208,7 +200,7 @@ private fun formatDate(ms: Long): String =
     SimpleDateFormat("dd/MM/yyyy", Locale.getDefault()).format(Date(ms))
 
 // ─────────────────────────────────────────────────────────────
-//  SCREEN: MIS LISTAS  (households/{hid}/lists)
+//  SCREEN: MIS LISTAS
 // ─────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -218,7 +210,6 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
     var showCreateDialog by remember { mutableStateOf(false) }
     var newListName by remember { mutableStateOf("") }
 
-    // Real-time listener on lists
     LaunchedEffect(householdId) {
         val hid = householdId ?: return@LaunchedEffect
         FirebaseFirestore.getInstance()
@@ -229,7 +220,9 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
                 snap?.documents?.forEach { doc ->
                     val data = doc.data?.toMutableMap() ?: mutableMapOf()
                     data["id"] = doc.id
-                    lists.add(data)
+                    if (data["status"] != "closed") {
+                        lists.add(data)
+                    }
                 }
             }
     }
@@ -248,7 +241,7 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
             when {
                 householdId == null -> Text("No perteneces a ningún hogar")
                 lists.isEmpty() -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("No hay listas", style = MaterialTheme.typography.headlineSmall)
+                    Text("No hay listas activas", style = MaterialTheme.typography.headlineSmall)
                     Spacer(modifier = Modifier.height(8.dp))
                     Text("Toca + para crear tu primera lista", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
@@ -296,19 +289,17 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
                     val hid = householdId ?: return@TextButton
                     val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
                     val finalName = newListName.ifBlank {
-                        val today = SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())
-                        "Lista $today"
+                        "Lista ${SimpleDateFormat("dd/MM", Locale.getDefault()).format(Date())}"
                     }
                     FirebaseFirestore.getInstance()
                         .collection("households").document(hid).collection("lists")
-                        .add(
-                            mapOf(
-                                "name" to finalName,
-                                "createdBy" to user.uid,
-                                "createdAt" to System.currentTimeMillis(),
-                                "itemCount" to 0
-                            )
-                        )
+                        .add(mapOf(
+                            "name" to finalName,
+                            "createdBy" to user.uid,
+                            "createdAt" to System.currentTimeMillis(),
+                            "itemCount" to 0,
+                            "status" to "open"
+                        ))
                     newListName = ""
                     showCreateDialog = false
                 }) { Text("Crear") }
@@ -321,25 +312,23 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
 }
 
 // ─────────────────────────────────────────────────────────────
-//  SCREEN: DETALLE DE UNA LISTA  (households/{hid}/lists/{listId}/items)
+//  SCREEN: DETALLE DE LISTA
 // ─────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
+    val context = LocalContext.current
     val householdId = rememberHouseholdId()
     val items = remember { mutableStateListOf<Map<String, Any?>>() }
     var listName by remember { mutableStateOf("Lista") }
     var showAddDialog by remember { mutableStateOf(false) }
     var newItemName by remember { mutableStateOf("") }
-
-    // Edit dialog state
     var editingItem by remember { mutableStateOf<Map<String, Any?>?>(null) }
     var editName by remember { mutableStateOf("") }
-
-    // Delete confirmation state
     var deletingItem by remember { mutableStateOf<Map<String, Any?>?>(null) }
+    var showCloseDialog by remember { mutableStateOf(false) }
+    var isClosing by remember { mutableStateOf(false) }
 
-    // Load list name
     LaunchedEffect(householdId, listId) {
         val hid = householdId ?: return@LaunchedEffect
         val doc = FirebaseFirestore.getInstance()
@@ -347,7 +336,6 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
         listName = doc.getString("name") ?: "Lista"
     }
 
-    // Real-time items listener
     LaunchedEffect(householdId, listId) {
         val hid = householdId ?: return@LaunchedEffect
         FirebaseFirestore.getInstance()
@@ -366,6 +354,7 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
     }
 
     val db = FirebaseFirestore.getInstance()
+    val hid = householdId
 
     Scaffold(
         topBar = {
@@ -386,14 +375,17 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             when {
-                householdId == null -> Text("No hay hogar")
+                hid == null -> Text("No hay hogar")
                 items.isEmpty() -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     Text("Lista vacía", style = MaterialTheme.typography.headlineSmall)
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Toca + para agregar productos", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(modifier = Modifier.height(32.dp))
+                    Button(onClick = { showCloseDialog = true }) {
+                        Text("Cerrar lista")
+                    }
                 }
                 else -> {
-                    val itemsPath = db.collection("households").document(householdId!!)
+                    val itemsPath = db.collection("households").document(hid)
                         .collection("lists").document(listId)
                     LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                         items(items) { item ->
@@ -405,7 +397,6 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                // Check toggle
                                 IconButton(onClick = {
                                     itemsPath.collection("items").document(itemId)
                                         .update("isChecked", !checked)
@@ -417,8 +408,6 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
                                         else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
-
-                                // Name
                                 Text(
                                     text = name,
                                     style = MaterialTheme.typography.bodyLarge.copy(
@@ -428,21 +417,23 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
                                     ),
                                     modifier = Modifier.weight(1f)
                                 )
-
-                                // Edit
-                                IconButton(onClick = {
-                                    editingItem = item
-                                    editName = name
-                                }) {
+                                IconButton(onClick = { editingItem = item; editName = name }) {
                                     Icon(Icons.Filled.Edit, contentDescription = "Editar", tint = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-
-                                // Delete
-                                IconButton(onClick = {
-                                    deletingItem = item
-                                }) {
+                                IconButton(onClick = { deletingItem = item }) {
                                     Icon(Icons.Filled.Delete, contentDescription = "Eliminar", tint = MaterialTheme.colorScheme.error)
                                 }
+                            }
+                        }
+
+                        // Close list button at the end
+                        item {
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Button(
+                                onClick = { showCloseDialog = true },
+                                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp)
+                            ) {
+                                Text("Cerrar lista")
                             }
                         }
                     }
@@ -467,24 +458,18 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val hid = householdId ?: return@TextButton
-                    val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
-                    if (newItemName.isNotBlank()) {
+                    if (newItemName.isNotBlank() && hid != null) {
+                        val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
                         val listRef = db.collection("households").document(hid)
                             .collection("lists").document(listId)
-                        listRef.collection("items").add(
-                            mapOf(
-                                "name" to newItemName.trim(),
-                                "isChecked" to false,
-                                "createdBy" to user.uid,
-                                "createdAt" to System.currentTimeMillis()
-                            )
-                        )
-                        // Update itemCount
-                        val newCount = items.size + 1
-                        listRef.update("itemCount", newCount)
-                        newItemName = ""
-                        showAddDialog = false
+                        listRef.collection("items").add(mapOf(
+                            "name" to newItemName.trim(),
+                            "isChecked" to false,
+                            "createdBy" to user.uid,
+                            "createdAt" to System.currentTimeMillis()
+                        ))
+                        listRef.update("itemCount", items.size + 1)
+                        newItemName = ""; showAddDialog = false
                     }
                 }, enabled = newItemName.isNotBlank()) { Text("Agregar") }
             },
@@ -510,9 +495,8 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
             },
             confirmButton = {
                 TextButton(onClick = {
-                    val hid = householdId ?: return@TextButton
-                    val itemId = editingItem?.get("id") as? String ?: return@TextButton
-                    if (editName.isNotBlank()) {
+                    val itemId = editingItem?.get("id") as? String
+                    if (editName.isNotBlank() && hid != null && itemId != null) {
                         db.collection("households").document(hid)
                             .collection("lists").document(listId)
                             .collection("items").document(itemId)
@@ -527,7 +511,7 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
         )
     }
 
-    // ── Delete confirmation dialog ──
+    // ── Delete dialog ──
     if (deletingItem != null) {
         val itemName = deletingItem?.get("name") as? String ?: ""
         AlertDialog(
@@ -536,16 +520,15 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
             text = { Text("¿Deseas eliminar \"$itemName\" de la lista?") },
             confirmButton = {
                 TextButton(onClick = {
-                    val hid = householdId ?: return@TextButton
-                    val itemId = deletingItem?.get("id") as? String ?: return@TextButton
-                    db.collection("households").document(hid)
-                        .collection("lists").document(listId)
-                        .collection("items").document(itemId).delete()
-                    // Update itemCount
-                    val newCount = (items.size - 1).coerceAtLeast(0)
-                    db.collection("households").document(hid)
-                        .collection("lists").document(listId)
-                        .update("itemCount", newCount)
+                    val itemId = deletingItem?.get("id") as? String
+                    if (hid != null && itemId != null) {
+                        db.collection("households").document(hid)
+                            .collection("lists").document(listId)
+                            .collection("items").document(itemId).delete()
+                        db.collection("households").document(hid)
+                            .collection("lists").document(listId)
+                            .update("itemCount", (items.size - 1).coerceAtLeast(0))
+                    }
                     deletingItem = null
                 }) { Text("Eliminar", color = MaterialTheme.colorScheme.error) }
             },
@@ -553,6 +536,165 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
                 TextButton(onClick = { deletingItem = null }) { Text("Cancelar") }
             }
         )
+    }
+
+    // ── Close list dialog ──
+    if (showCloseDialog) {
+        AlertDialog(
+            onDismissRequest = { if (!isClosing) showCloseDialog = false },
+            title = { Text("Cerrar lista") },
+            text = { Text("¿Cerrar \"$listName\"? Los productos pasarán al historial de compras.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        if (hid == null) return@TextButton
+                        isClosing = true
+                        val now = System.currentTimeMillis()
+                        val listRef = db.collection("households").document(hid)
+                            .collection("lists").document(listId)
+
+                        // Create trip record
+                        val tripData = mutableMapOf<String, Any>(
+                            "name" to listName,
+                            "completedAt" to now,
+                            "total" to 0.0,
+                            "itemCount" to items.size,
+                            "completedBy" to (FirebaseAuth.getInstance().currentUser?.uid ?: "")
+                        )
+
+                        db.collection("households").document(hid)
+                            .collection("trips").add(tripData)
+                            .addOnSuccessListener { tripDoc ->
+                                // Copy items to trip
+                                items.forEach { item ->
+                                    val name = item["name"] as? String ?: ""
+                                    val checked = item["isChecked"] as? Boolean ?: false
+                                    tripDoc.collection("items").add(mapOf(
+                                        "name" to name,
+                                        "price" to 0.0,
+                                        "isChecked" to checked
+                                    ))
+                                }
+                                // Mark list as closed
+                                listRef.update("status", "closed", "closedAt", now)
+                            }
+                        showCloseDialog = false
+                        isClosing = false
+                        onBack()
+                    },
+                    enabled = !isClosing
+                ) { Text(if (isClosing) "Cerrando..." else "Cerrar lista") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showCloseDialog = false }) { Text("Cancelar") }
+            }
+        )
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+//  SCREEN: MI HOGAR
+// ─────────────────────────────────────────────────────────────
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun HogarScreen() {
+    val context = LocalContext.current
+    val user = FirebaseAuth.getInstance().currentUser
+    val householdId = rememberHouseholdId()
+    var householdName by remember { mutableStateOf("") }
+    var inviteCode by remember { mutableStateOf("") }
+    val members = remember { mutableStateListOf<Map<String, Any?>>() }
+    var copied by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(householdId) {
+        val hid = householdId ?: return@LaunchedEffect
+        val db = FirebaseFirestore.getInstance()
+        val doc = db.collection("households").document(hid).get().await()
+        householdName = doc.getString("name") ?: ""
+        inviteCode = doc.getString("inviteCode") ?: ""
+
+        // Load members
+        val membersSnap = doc.reference.collection("members").get().await()
+        members.clear()
+        membersSnap.documents.forEach { memDoc ->
+            val data = memDoc.data?.toMutableMap() ?: mutableMapOf()
+            data["id"] = memDoc.id
+            members.add(data)
+        }
+    }
+
+    Scaffold(topBar = { TopAppBar(title = { Text("Mi Hogar") }) }) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+        ) {
+            // Household name
+            Text(householdName, style = MaterialTheme.typography.headlineMedium)
+
+            Spacer(modifier = Modifier.height(24.dp))
+
+            // Invite code section
+            Text("Código de invitación", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (inviteCode.isNotEmpty()) {
+                Text(
+                    inviteCode,
+                    style = MaterialTheme.typography.displaySmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Row {
+                    TextButton(onClick = {
+                        val clip = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                        clip.setPrimaryClip(ClipData.newPlainText("invite", inviteCode))
+                        copied++
+                    }) { Text("Copiar") }
+
+                    TextButton(onClick = {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            putExtra(Intent.EXTRA_TEXT, "Unite a mi hogar \"$householdName\" con el código: $inviteCode")
+                            type = "text/plain"
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, null))
+                    }) { Text("Compartir") }
+                }
+
+                if (copied > 0) {
+                    Text("Copiado", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+            } else {
+                Text("Generando código...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+
+            Spacer(modifier = Modifier.height(32.dp))
+
+            // Members section
+            Text("Miembros", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            when {
+                members.isEmpty() -> Text("Cargando miembros...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                else -> {
+                    var isAdmin by remember { mutableStateOf(false) }
+                    members.forEach { member ->
+                        val name = member["displayName"] as? String ?: "?"
+                        val role = member["role"] as? String ?: "MEMBER"
+                        val joinedAt = (member["joinedAt"] as? Number)?.toLong()
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(name, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                            Text(
+                                if (role == "ADMIN") "Admin" else "Miembro",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (role == "ADMIN") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -588,20 +730,14 @@ fun PricesDirect() {
         topBar = { TopAppBar(title = { Text("Precios") }) },
         floatingActionButton = {
             if (householdId != null) {
-                FloatingActionButton(onClick = { showAddDialog = true }) {
-                    Icon(Icons.Filled.Add, contentDescription = "Agregar precio")
-                }
+                FloatingActionButton(onClick = { showAddDialog = true }) { Icon(Icons.Filled.Add, contentDescription = "Agregar precio") }
             }
         }
     ) { padding ->
         Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
             when {
                 householdId == null -> Text("No hay hogar seleccionado")
-                prices.isEmpty() -> Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Sin precios guardados", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text("Toca + para comparar precios", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                prices.isEmpty() -> Text("Sin precios guardados", style = MaterialTheme.typography.headlineSmall)
                 else -> LazyColumn(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp)) {
                     items(prices) { price ->
                         val pName = price["itemName"] as? String ?: "?"
@@ -633,16 +769,13 @@ fun PricesDirect() {
             confirmButton = {
                 TextButton(onClick = {
                     val hid = householdId ?: return@TextButton
-                    val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
                     val price = priceText.toDoubleOrNull()
-                    if (itemName.isNotBlank() && storeName.isNotBlank() && price != null) {
+                    if (itemName.isNotBlank() && storeName.isNotBlank() && price != null && hid != null) {
                         FirebaseFirestore.getInstance()
                             .collection("households").document(hid).collection("prices")
                             .add(mapOf(
-                                "itemName" to itemName.trim(),
-                                "storeName" to storeName.trim(),
-                                "price" to price,
-                                "createdBy" to user.uid,
+                                "itemName" to itemName.trim(), "storeName" to storeName.trim(),
+                                "price" to price, "createdBy" to (FirebaseAuth.getInstance().currentUser?.uid ?: ""),
                                 "createdAt" to System.currentTimeMillis()
                             ))
                         itemName = ""; storeName = ""; priceText = ""; showAddDialog = false
@@ -693,7 +826,7 @@ fun HistoryDirect() {
                         val dateStr = if (completedAt > 0) formatDate(completedAt) else "?"
                         Column(modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                             Text(name, style = MaterialTheme.typography.titleMedium)
-                            Text("📅 $dateStr — ₡${String.format("%.0f", total)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("$dateStr — ₡${String.format("%.0f", total)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -708,7 +841,6 @@ fun HistoryDirect() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsDirect() {
-    val context = androidx.compose.ui.platform.LocalContext.current
     val user = FirebaseAuth.getInstance().currentUser
     val householdId = rememberHouseholdId()
     var householdName by remember { mutableStateOf("") }
@@ -733,34 +865,9 @@ fun SettingsDirect() {
             Text("Hogar", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(8.dp))
             if (householdName.isNotEmpty()) Text(householdName, style = MaterialTheme.typography.bodyLarge)
-
             if (inviteCode.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("Código de invitación", style = MaterialTheme.typography.titleMedium)
                 Spacer(modifier = Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        inviteCode,
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Spacer(modifier = Modifier.weight(1f))
-                    // Copy button
-                    TextButton(onClick = {
-                        val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
-                        val clip = android.content.ClipData.newPlainText("invite code", inviteCode)
-                        clipboard.setPrimaryClip(clip)
-                    }) { Text("Copiar") }
-                    // Share button
-                    TextButton(onClick = {
-                        val sendIntent = android.content.Intent().apply {
-                            action = android.content.Intent.ACTION_SEND
-                            putExtra(android.content.Intent.EXTRA_TEXT, "Unite a mi hogar \"$householdName\" con el código: $inviteCode")
-                            type = "text/plain"
-                        }
-                        context.startActivity(android.content.Intent.createChooser(sendIntent, null))
-                    }) { Text("Compartir") }
-                }
+                Text("Código: $inviteCode", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             Spacer(modifier = Modifier.height(24.dp))

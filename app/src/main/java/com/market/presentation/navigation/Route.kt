@@ -4,6 +4,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LocalOffer
+import androidx.compose.material.icons.filled.People
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 
@@ -14,6 +15,7 @@ sealed class Route(val route: String) {
         fun createRoute(code: String = "") = "join_household?code=$code"
     }
     data object ShoppingList : Route("shopping_list")
+    data object Hogar : Route("hogar")
     data object Stores : Route("stores")
     data object Prices : Route("prices")
     data object History : Route("history")
@@ -31,7 +33,8 @@ data class BottomNavItem(
 )
 
 val bottomNavItems = listOf(
-    BottomNavItem(Route.ShoppingList, "Lista", Icons.Filled.Home),
+    BottomNavItem(Route.ShoppingList, "Listas", Icons.Filled.Home),
+    BottomNavItem(Route.Hogar, "Mi Hogar", Icons.Filled.People),
     BottomNavItem(Route.Prices, "Precios", Icons.Filled.LocalOffer),
     BottomNavItem(Route.History, "Historial", Icons.Filled.History),
     BottomNavItem(Route.Settings, "Ajustes", Icons.Filled.Settings)
