@@ -640,10 +640,28 @@ fun HogarScreen() {
     val members = remember { mutableStateListOf<Map<String, Any?>>() }
     var copied by remember { mutableIntStateOf(0) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
+    val allHouseholds = remember { mutableStateListOf<Map<String, Any?>>() }
 
     LaunchedEffect(householdId, refreshTrigger) {
-        val hid = householdId ?: return@LaunchedEffect
         val db = FirebaseFirestore.getInstance()
+        val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return@LaunchedEffect
+
+        // Fetch ALL households the user belongs to
+        allHouseholds.clear()
+        val memberSnap = db.collectionGroup("members")
+            .whereEqualTo("__name__", uid)
+            .get().await()
+        for (doc in memberSnap.documents) {
+            val hid = doc.reference.parent.parent?.id ?: continue
+            val hhDoc = db.collection("households").document(hid).get().await()
+            val data = hhDoc.data?.toMutableMap() ?: mutableMapOf()
+            data["id"] = hhDoc.id
+            data["myRole"] = doc.getString("role") ?: "MEMBER"
+            allHouseholds.add(data)
+        }
+
+        // Current household info
+        val hid = householdId ?: return@LaunchedEffect
         val doc = db.collection("households").document(hid).get().await()
         householdName = doc.getString("name") ?: ""
 
@@ -732,6 +750,47 @@ fun HogarScreen() {
 
             Spacer(modifier = Modifier.height(24.dp))
             HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            // ── All households ──
+            Text("Todos mis hogares", style = MaterialTheme.typography.titleLarge)
+            Spacer(modifier = Modifier.height(8.dp))
+
+            if (allHouseholds.isEmpty()) {
+                Text("Cargando...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            } else {
+                allHouseholds.forEach { hh ->
+                    val hhName = hh["name"] as? String ?: "?"
+                    val hhId = hh["id"] as? String ?: ""
+                    val myRole = hh["myRole"] as? String ?: "MEMBER"
+                    val isActive = hhId == householdId
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(hhName, style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                if (isActive) "Activo · $myRole" else myRole,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        if (!isActive) {
+                            TextButton(onClick = {
+                                FirebaseFirestore.getInstance()
+                                    .collection("users")
+                                    .document(FirebaseAuth.getInstance().currentUser?.uid ?: return@TextButton)
+                                    .update("householdId", hhId)
+                                refreshTrigger++
+                            }) { Text("Usar") }
+                        } else {
+                            Text("Activo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(16.dp))
 
             var showNewHouseholdDialog by remember { mutableStateOf(false) }
