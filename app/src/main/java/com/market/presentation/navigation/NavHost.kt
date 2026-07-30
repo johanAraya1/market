@@ -695,23 +695,6 @@ fun HogarScreen() {
             allHouseholds.add(data)
         }
     }
-        householdName = doc.getString("name") ?: ""
-
-        var code = doc.getString("inviteCode")
-        if (code.isNullOrBlank()) {
-            code = UUID.randomUUID().toString().take(6).uppercase()
-            doc.reference.update("inviteCode", code)
-        }
-        inviteCode = code
-
-        val membersSnap = doc.reference.collection("members").get().await()
-        members.clear()
-        membersSnap.documents.forEach { memDoc ->
-            val data = memDoc.data?.toMutableMap() ?: mutableMapOf()
-            data["id"] = memDoc.id
-            members.add(data)
-        }
-    }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Mi Hogar") }) }) { padding ->
         Column(
