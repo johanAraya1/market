@@ -72,6 +72,31 @@ class HouseholdDataSource @Inject constructor(
         )
     }
 
+    suspend fun getHouseholdByInviteCode(inviteCode: String): Household {
+        val snapshot = firestore.collection("households")
+            .whereEqualTo("inviteCode", inviteCode)
+            .limit(1)
+            .get()
+            .await()
+
+        if (snapshot.isEmpty) {
+            throw IllegalArgumentException("Código inválido o expirado")
+        }
+
+        val doc = snapshot.documents.first()
+        val expiry = doc.getLong("inviteCodeExpiry") ?: 0L
+        if (expiry > 0 && System.currentTimeMillis() > expiry) {
+            throw IllegalArgumentException("Código inválido o expirado")
+        }
+
+        return Household(
+            id = doc.id,
+            name = doc.getString("name") ?: "",
+            createdAt = doc.getLong("createdAt") ?: 0L,
+            createdBy = doc.getString("createdBy") ?: ""
+        )
+    }
+
     suspend fun generateInviteCode(householdId: String): String {
         val code = (100000..999999).random().toString()
         val expiry = System.currentTimeMillis() + (7 * 24 * 60 * 60 * 1000L) // 7 days

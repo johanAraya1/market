@@ -78,19 +78,6 @@ fun MarketNavHost() {
     val navBackStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = navBackStackEntry?.destination
 
-    // Logout listener — redirect to login when auth state changes
-    var isAuthenticated by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        FirebaseAuth.getInstance().addAuthStateListener { auth ->
-            isAuthenticated = auth.currentUser != null
-        }
-    }
-    LaunchedEffect(isAuthenticated) {
-        if (!isAuthenticated && currentDestination?.route != Route.Login.route) {
-            navController.navigate(Route.Login.route) { popUpTo(0) { inclusive = true } }
-        }
-    }
-
     val showBottomBar = currentDestination?.route in listOf(
         Route.ShoppingList.route,
         Route.Hogar.route,
@@ -205,7 +192,14 @@ fun MarketNavHost() {
 
             composable(Route.Prices.route) { PricesDirect() }
             composable(Route.History.route) { HistoryDirect() }
-            composable(Route.Settings.route) { SettingsDirect() }
+            composable(Route.Settings.route) {
+                SettingsDirect(onLogout = {
+                    FirebaseAuth.getInstance().signOut()
+                    navController.navigate(Route.Login.route) {
+                        popUpTo(0) { inclusive = true }
+                    }
+                })
+            }
         }
     }
 }
@@ -975,7 +969,7 @@ fun HistoryDirect() {
 // ─────────────────────────────────────────────────────────────
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsDirect() {
+fun SettingsDirect(onLogout: () -> Unit = {}) {
     val user = FirebaseAuth.getInstance().currentUser
     val householdId = rememberHouseholdId()
     var householdName by remember { mutableStateOf("") }
@@ -1007,7 +1001,7 @@ fun SettingsDirect() {
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            TextButton(onClick = { FirebaseAuth.getInstance().signOut() }) {
+            TextButton(onClick = onLogout) {
                 Text("Cerrar sesión", color = MaterialTheme.colorScheme.error)
             }
         }

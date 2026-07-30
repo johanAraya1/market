@@ -37,9 +37,13 @@ class HouseholdRepositoryImpl @Inject constructor(
         val currentUser = authDataSource.getCurrentFirebaseUser()
             ?: throw IllegalStateException("No hay usuario autenticado")
 
+        // First find the household to check if user is the creator
+        val household = householdDataSource.getHouseholdByInviteCode(inviteCode)
+        val role = if (household.createdBy == currentUser.uid) MemberRole.ADMIN else MemberRole.MEMBER
+
         val member = Member(
             uid = currentUser.uid,
-            role = MemberRole.MEMBER,
+            role = role,
             displayName = currentUser.displayName ?: "",
             joinedAt = System.currentTimeMillis()
         )
