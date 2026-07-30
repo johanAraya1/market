@@ -645,24 +645,56 @@ fun HogarScreen() {
     LaunchedEffect(householdId, refreshTrigger) {
         val db = FirebaseFirestore.getInstance()
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return@LaunchedEffect
-
-        // Fetch ALL households the user belongs to
-        allHouseholds.clear()
-        val memberSnap = db.collectionGroup("members")
-            .whereEqualTo("__name__", uid)
-            .get().await()
-        for (doc in memberSnap.documents) {
-            val hid = doc.reference.parent.parent?.id ?: continue
-            val hhDoc = db.collection("households").document(hid).get().await()
-            val data = hhDoc.data?.toMutableMap() ?: mutableMapOf()
-            data["id"] = hhDoc.id
-            data["myRole"] = doc.getString("role") ?: "MEMBER"
-            allHouseholds.add(data)
-        }
+        val hid = householdId ?: return@LaunchedEffect
 
         // Current household info
-        val hid = householdId ?: return@LaunchedEffect
         val doc = db.collection("households").document(hid).get().await()
+        householdName = doc.getString("name") ?: ""
+
+        var code = doc.getString("inviteCode")
+        if (code.isNullOrBlank()) {
+            code = UUID.randomUUID().toString().take(6).uppercase()
+            doc.reference.update("inviteCode", code)
+        }
+        inviteCode = code
+
+        // Load members of current household
+        val membersSnap = doc.reference.collection("members").get().await()
+        members.clear()
+        membersSnap.documents.forEach { memDoc ->
+            val data = memDoc.data?.toMutableMap() ?: mutableMapOf()
+            data["id"] = memDoc.id
+            members.add(data)
+        }
+
+        // Fetch ALL households the user belongs to
+        try {
+            allHouseholds.clear()
+            val memberSnap = db.collectionGroup("members")
+                .whereEqualTo("__name__", uid)
+                .get().await()
+            for (memberDoc in memberSnap.documents) {
+                val hhid = memberDoc.reference.parent.parent?.id ?: continue
+                val hhDoc = db.collection("households").document(hhid).get().await()
+                val data = hhDoc.data?.toMutableMap() ?: mutableMapOf()
+                data["id"] = hhDoc.id
+                data["myRole"] = memberDoc.getString("role") ?: "MEMBER"
+                allHouseholds.add(data)
+            }
+            // If query returns nothing, add current household manually
+            if (allHouseholds.isEmpty()) {
+                val data = doc.data?.toMutableMap() ?: mutableMapOf()
+                data["id"] = doc.id
+                allHouseholds.add(data)
+            }
+        } catch (e: Exception) {
+            // Fallback: just show current household
+            allHouseholds.clear()
+            val data = doc.data?.toMutableMap() ?: mutableMapOf()
+            data["id"] = doc.id
+            allHouseholds.add(data)
+        }
+    }
         householdName = doc.getString("name") ?: ""
 
         var code = doc.getString("inviteCode")
