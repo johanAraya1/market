@@ -67,6 +67,7 @@ import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 
 // ─────────────────────────────────────────────────────────────
 //  NAV HOST
@@ -123,7 +124,6 @@ fun MarketNavHost() {
                 )
             }
 
-            // ── Post-login: check household and redirect ──
             composable(Route.PostLogin.route) {
                 PostLoginRedirect(
                     onGoToMain = {
@@ -167,7 +167,6 @@ fun MarketNavHost() {
                 )
             }
 
-            // ── MIS LISTAS ──
             composable(Route.ShoppingList.route) {
                 ShoppingListsScreen(
                     onOpenList = { listId ->
@@ -176,12 +175,10 @@ fun MarketNavHost() {
                 )
             }
 
-            // ── MI HOGAR ──
             composable(Route.Hogar.route) {
                 HogarScreen()
             }
 
-            // ── DETALLE DE LISTA ──
             composable(
                 route = Route.TripDetail.route,
                 arguments = listOf(navArgument("tripId") { type = NavType.StringType })
@@ -359,7 +356,6 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
-    val context = LocalContext.current
     val householdId = rememberHouseholdId()
     val items = remember { mutableStateListOf<Map<String, Any?>>() }
     var listName by remember { mutableStateOf("Lista") }
@@ -468,7 +464,6 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
                             }
                         }
 
-                        // Close list button at the end
                         item {
                             Spacer(modifier = Modifier.height(16.dp))
                             Button(
@@ -476,89 +471,11 @@ fun ListDetailScreen(listId: String, onBack: () -> Unit = {}) {
                                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 32.dp)
                             ) {
                                 Text("Cerrar lista")
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-            HorizontalDivider()
-            Spacer(modifier = Modifier.height(16.dp))
-
-            // Create new household
-            var showNewHouseholdDialog by remember { mutableStateOf(false) }
-            TextButton(onClick = { showNewHouseholdDialog = true }) {
-                Text("Crear nuevo hogar", color = MaterialTheme.colorScheme.primary)
-            }
-            Text(
-                "Al crear un nuevo hogar tu hogar actual quedará sin administrador",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            if (showNewHouseholdDialog) {
-                NewHouseholdDialog(
-                    onDismiss = { showNewHouseholdDialog = false },
-                    onCreated = {
-                        showNewHouseholdDialog = false
-                        refreshTrigger++
+                            }
+                        }
                     }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun NewHouseholdDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
-    var name by remember { mutableStateOf("") }
-    val user = FirebaseAuth.getInstance().currentUser
-    LaunchedEffect(Unit) {
-        if (name.isBlank() && user?.displayName != null) {
-            name = "Hogar de ${user.displayName}"
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Nuevo hogar") },
-        text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Nombre del hogar") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = {
-            TextButton(onClick = {
-                val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
-                if (name.isBlank()) return@TextButton
-                val db = FirebaseFirestore.getInstance()
-                val now = System.currentTimeMillis()
-                val inviteCode = java.util.UUID.randomUUID().toString().take(6).uppercase()
-                val newHid = db.collection("households").document()
-
-                newHid.set(mapOf(
-                    "name" to name.trim(),
-                    "createdAt" to now,
-                    "createdBy" to user.uid,
-                    "inviteCode" to inviteCode
-                )).addOnSuccessListener {
-                    newHid.collection("members").document(user.uid).set(mapOf(
-                        "role" to "ADMIN",
-                        "displayName" to (user.displayName ?: ""),
-                        "joinedAt" to now
-                    ))
-                    // Update user's householdId
-                    db.collection("users").document(user.uid).update("householdId", newHid.id)
-                    onDismiss()
-                    onCreated()
                 }
-            }, enabled = name.isNotBlank()) { Text("Crear") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
-    )
-}
+            }
         }
     }
 
@@ -673,7 +590,6 @@ fun NewHouseholdDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
                         val listRef = db.collection("households").document(hid)
                             .collection("lists").document(listId)
 
-                        // Create trip record
                         val tripData = mutableMapOf<String, Any>(
                             "name" to listName,
                             "completedAt" to now,
@@ -685,7 +601,6 @@ fun NewHouseholdDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
                         db.collection("households").document(hid)
                             .collection("trips").add(tripData)
                             .addOnSuccessListener { tripDoc ->
-                                // Copy items to trip
                                 items.forEach { item ->
                                     val name = item["name"] as? String ?: ""
                                     val checked = item["isChecked"] as? Boolean ?: false
@@ -695,7 +610,6 @@ fun NewHouseholdDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
                                         "isChecked" to checked
                                     ))
                                 }
-                                // Mark list as closed
                                 listRef.update("status", "closed", "closedAt", now)
                             }
                         showCloseDialog = false
@@ -727,7 +641,6 @@ fun HogarScreen() {
     var copied by remember { mutableIntStateOf(0) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
 
-    // Re-fetch when refreshTrigger changes
     LaunchedEffect(householdId, refreshTrigger) {
         val hid = householdId ?: return@LaunchedEffect
         val db = FirebaseFirestore.getInstance()
@@ -736,13 +649,11 @@ fun HogarScreen() {
 
         var code = doc.getString("inviteCode")
         if (code.isNullOrBlank()) {
-            // Generate invite code for existing households
-            code = java.util.UUID.randomUUID().toString().take(6).uppercase()
+            code = UUID.randomUUID().toString().take(6).uppercase()
             doc.reference.update("inviteCode", code)
         }
         inviteCode = code
 
-        // Load members
         val membersSnap = doc.reference.collection("members").get().await()
         members.clear()
         membersSnap.documents.forEach { memDoc ->
@@ -756,12 +667,10 @@ fun HogarScreen() {
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
         ) {
-            // Household name
             Text(householdName, style = MaterialTheme.typography.headlineMedium)
 
             Spacer(modifier = Modifier.height(24.dp))
 
-            // Invite code section
             Text("Código de invitación", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -797,18 +706,15 @@ fun HogarScreen() {
 
             Spacer(modifier = Modifier.height(32.dp))
 
-            // Members section
             Text("Miembros", style = MaterialTheme.typography.titleLarge)
             Spacer(modifier = Modifier.height(8.dp))
 
             when {
                 members.isEmpty() -> Text("Cargando miembros...", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else -> {
-                    var isAdmin by remember { mutableStateOf(false) }
                     members.forEach { member ->
                         val name = member["displayName"] as? String ?: "?"
                         val role = member["role"] as? String ?: "MEMBER"
-                        val joinedAt = (member["joinedAt"] as? Number)?.toLong()
                         Row(
                             modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -823,8 +729,84 @@ fun HogarScreen() {
                     }
                 }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            HorizontalDivider()
+            Spacer(modifier = Modifier.height(16.dp))
+
+            var showNewHouseholdDialog by remember { mutableStateOf(false) }
+            TextButton(onClick = { showNewHouseholdDialog = true }) {
+                Text("Crear nuevo hogar", color = MaterialTheme.colorScheme.primary)
+            }
+            Text(
+                "Al crear un nuevo hogar tu hogar actual quedará sin administrador",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+
+            if (showNewHouseholdDialog) {
+                NewHouseholdDialog(
+                    onDismiss = { showNewHouseholdDialog = false },
+                    onCreated = {
+                        showNewHouseholdDialog = false
+                        refreshTrigger++
+                    }
+                )
+            }
         }
     }
+}
+
+@Composable
+fun NewHouseholdDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
+    var name by remember { mutableStateOf("") }
+    val user = FirebaseAuth.getInstance().currentUser
+    LaunchedEffect(Unit) {
+        if (name.isBlank() && user?.displayName != null) {
+            name = "Hogar de ${user.displayName}"
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Nuevo hogar") },
+        text = {
+            OutlinedTextField(
+                value = name,
+                onValueChange = { name = it },
+                label = { Text("Nombre del hogar") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
+                if (name.isBlank()) return@TextButton
+                val db = FirebaseFirestore.getInstance()
+                val now = System.currentTimeMillis()
+                val inviteCode = UUID.randomUUID().toString().take(6).uppercase()
+                val newHid = db.collection("households").document()
+
+                newHid.set(mapOf(
+                    "name" to name.trim(),
+                    "createdAt" to now,
+                    "createdBy" to user.uid,
+                    "inviteCode" to inviteCode
+                )).addOnSuccessListener {
+                    newHid.collection("members").document(user.uid).set(mapOf(
+                        "role" to "ADMIN",
+                        "displayName" to (user.displayName ?: ""),
+                        "joinedAt" to now
+                    ))
+                    db.collection("users").document(user.uid).update("householdId", newHid.id)
+                    onDismiss()
+                    onCreated()
+                }
+            }, enabled = name.isNotBlank()) { Text("Crear") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+    )
 }
 
 // ─────────────────────────────────────────────────────────────
