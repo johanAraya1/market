@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -636,6 +638,7 @@ fun HogarScreen() {
     val context = LocalContext.current
     val user = FirebaseAuth.getInstance().currentUser
     val householdId = rememberHouseholdId()
+    var activeHouseholdId by remember { mutableStateOf(householdId) }
     var householdName by remember { mutableStateOf("") }
     var inviteCode by remember { mutableStateOf("") }
     val members = remember { mutableStateListOf<Map<String, Any?>>() }
@@ -643,13 +646,17 @@ fun HogarScreen() {
     var refreshTrigger by remember { mutableIntStateOf(0) }
     val allHouseholds = remember { mutableStateListOf<Map<String, Any?>>() }
 
-    LaunchedEffect(householdId, refreshTrigger) {
+    LaunchedEffect(refreshTrigger) {
         val db = FirebaseFirestore.getInstance()
         val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return@LaunchedEffect
-        val hid = householdId ?: return@LaunchedEffect
+
+        // Re-read active household from the user doc (source of truth)
+        val userDoc = db.collection("users").document(uid).get().await()
+        val currentHid = userDoc.getString("householdId") ?: return@LaunchedEffect
+        activeHouseholdId = currentHid
 
         // Current household info
-        val doc = db.collection("households").document(hid).get().await()
+        val doc = db.collection("households").document(currentHid).get().await()
         householdName = doc.getString("name") ?: ""
 
         var code = doc.getString("inviteCode")
@@ -668,30 +675,33 @@ fun HogarScreen() {
             members.add(data)
         }
 
-        // Fetch ALL households the user belongs to (from user doc array)
-        val userDoc = db.collection("users").document(uid).get().await()
+        // ALL households: merge stored array + scanned membership, dedupe by id
         val storedIds = userDoc.get("householdIds") as? List<*> ?: emptyList<Any>()
-        val householdIds = storedIds.mapNotNull { it as? String }.toMutableList()
+        val storedList = storedIds.mapNotNull { it as? String }.toList()
+        val merged = LinkedHashSet<String>()
+        storedList.forEach { merged.add(it) }
+        try {
+            val householdsSnap = db.collection("households").get().await()
+            for (hhDoc in householdsSnap.documents) {
+                val isMember = hhDoc.reference.collection("members").document(uid).get().await()
+                if (isMember.exists()) merged.add(hhDoc.id)
+            }
+        } catch (e: Exception) {
+            // Ignore scan errors; stored array still works
+        }
+        if (merged.isEmpty()) merged.add(currentHid)
 
-        if (householdIds.isEmpty()) {
-            // Backfill: scan all households, keep those where we are a member
+        val listToSave = merged.toList()
+        if (listToSave != storedList) {
             try {
-                val householdsSnap = db.collection("households").get().await()
-                for (hhDoc in householdsSnap.documents) {
-                    val isMember = hhDoc.reference.collection("members").document(uid).get().await()
-                    if (isMember.exists()) householdIds.add(hhDoc.id)
-                }
-                if (householdIds.isNotEmpty()) {
-                    db.collection("users").document(uid).update("householdIds", householdIds)
-                }
+                db.collection("users").document(uid).update("householdIds", listToSave)
             } catch (e: Exception) {
-                // Fallback: just current household
+                // Ignore persist errors
             }
         }
-        if (householdIds.isEmpty()) householdIds.add(hid)
 
         allHouseholds.clear()
-        for (hhid in householdIds) {
+        for (hhid in listToSave) {
             try {
                 val hhDoc = db.collection("households").document(hhid).get().await()
                 val data = hhDoc.data?.toMutableMap() ?: mutableMapOf()
@@ -707,7 +717,11 @@ fun HogarScreen() {
 
     Scaffold(topBar = { TopAppBar(title = { Text("Mi Hogar") }) }) { padding ->
         Column(
-            modifier = Modifier.fillMaxSize().padding(padding).padding(16.dp)
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding)
+                .verticalScroll(rememberScrollState())
+                .padding(16.dp)
         ) {
             Text(householdName, style = MaterialTheme.typography.headlineMedium)
 
@@ -787,7 +801,7 @@ fun HogarScreen() {
                     val hhName = hh["name"] as? String ?: "?"
                     val hhId = hh["id"] as? String ?: ""
                     val myRole = hh["myRole"] as? String ?: "MEMBER"
-                    val isActive = hhId == householdId
+                    val isActive = hhId == activeHouseholdId
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
                         verticalAlignment = Alignment.CenterVertically
