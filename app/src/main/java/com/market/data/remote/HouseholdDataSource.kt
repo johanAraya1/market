@@ -1,5 +1,6 @@
 package com.market.data.remote
 
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.market.domain.model.Household
 import com.market.domain.model.Member
@@ -30,6 +31,14 @@ class HouseholdDataSource @Inject constructor(
                 "joinedAt" to member.joinedAt
             ))
         }.await()
+
+        // Track this household in the user's profile
+        firestore.collection("users").document(member.uid)
+            .update(
+                "householdId", householdRef.id,
+                "householdIds", FieldValue.arrayUnion(householdRef.id)
+            )
+            .await()
 
         return household.copy(id = householdRef.id)
     }
@@ -63,6 +72,14 @@ class HouseholdDataSource @Inject constructor(
             "displayName" to member.displayName,
             "joinedAt" to member.joinedAt
         )).await()
+
+        // Track this household in the user's profile
+        firestore.collection("users").document(member.uid)
+            .update(
+                "householdId", householdId,
+                "householdIds", FieldValue.arrayUnion(householdId)
+            )
+            .await()
 
         return Household(
             id = householdId,

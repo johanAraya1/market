@@ -58,6 +58,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.market.presentation.screen.auth.LoginScreen
@@ -667,32 +668,40 @@ fun HogarScreen() {
             members.add(data)
         }
 
-        // Fetch ALL households the user belongs to
-        try {
-            allHouseholds.clear()
-            val memberSnap = db.collectionGroup("members")
-                .whereEqualTo("__name__", uid)
-                .get().await()
-            for (memberDoc in memberSnap.documents) {
-                val hhid = memberDoc.reference.parent.parent?.id ?: continue
+        // Fetch ALL households the user belongs to (from user doc array)
+        val userDoc = db.collection("users").document(uid).get().await()
+        val storedIds = userDoc.get("householdIds") as? List<*> ?: emptyList<Any>()
+        val householdIds = storedIds.mapNotNull { it as? String }.toMutableList()
+
+        if (householdIds.isEmpty()) {
+            // Backfill: scan all households, keep those where we are a member
+            try {
+                val householdsSnap = db.collection("households").get().await()
+                for (hhDoc in householdsSnap.documents) {
+                    val isMember = hhDoc.reference.collection("members").document(uid).get().await()
+                    if (isMember.exists()) householdIds.add(hhDoc.id)
+                }
+                if (householdIds.isNotEmpty()) {
+                    db.collection("users").document(uid).update("householdIds", householdIds)
+                }
+            } catch (e: Exception) {
+                // Fallback: just current household
+            }
+        }
+        if (householdIds.isEmpty()) householdIds.add(hid)
+
+        allHouseholds.clear()
+        for (hhid in householdIds) {
+            try {
                 val hhDoc = db.collection("households").document(hhid).get().await()
                 val data = hhDoc.data?.toMutableMap() ?: mutableMapOf()
                 data["id"] = hhDoc.id
-                data["myRole"] = memberDoc.getString("role") ?: "MEMBER"
+                val myMember = hhDoc.reference.collection("members").document(uid).get().await()
+                data["myRole"] = myMember.getString("role") ?: "MEMBER"
                 allHouseholds.add(data)
+            } catch (e: Exception) {
+                // Skip households that no longer exist
             }
-            // If query returns nothing, add current household manually
-            if (allHouseholds.isEmpty()) {
-                val data = doc.data?.toMutableMap() ?: mutableMapOf()
-                data["id"] = doc.id
-                allHouseholds.add(data)
-            }
-        } catch (e: Exception) {
-            // Fallback: just show current household
-            allHouseholds.clear()
-            val data = doc.data?.toMutableMap() ?: mutableMapOf()
-            data["id"] = doc.id
-            allHouseholds.add(data)
         }
     }
 
@@ -796,7 +805,10 @@ fun HogarScreen() {
                                 FirebaseFirestore.getInstance()
                                     .collection("users")
                                     .document(FirebaseAuth.getInstance().currentUser?.uid ?: return@TextButton)
-                                    .update("householdId", hhId)
+                                    .update(
+                                        "householdId", hhId,
+                                        "householdIds", FieldValue.arrayUnion(hhId)
+                                    )
                                 refreshTrigger++
                             }) { Text("Usar") }
                         } else {
@@ -873,7 +885,10 @@ fun NewHouseholdDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
                         "displayName" to (user.displayName ?: ""),
                         "joinedAt" to now
                     ))
-                    db.collection("users").document(user.uid).update("householdId", newHid.id)
+                    db.collection("users").document(user.uid).update(
+                        "householdId", newHid.id,
+                        "householdIds", FieldValue.arrayUnion(newHid.id)
+                    )
                     onDismiss()
                     onCreated()
                 }

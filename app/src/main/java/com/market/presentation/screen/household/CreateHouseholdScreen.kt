@@ -21,6 +21,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
@@ -94,6 +95,17 @@ fun CreateHouseholdScreen(
             }
 
             Log.d(TAG, "Household created: ${householdRef.id}")
+
+            // Track this household in the user's profile
+            withContext(Dispatchers.IO) {
+                withTimeout(10_000L) {
+                    db.collection("users").document(user.uid).update(
+                        "householdId", householdRef.id,
+                        "householdIds", FieldValue.arrayUnion(householdRef.id)
+                    ).await()
+                }
+            }
+
             isLoading = false
             onHouseholdCreated()
 
