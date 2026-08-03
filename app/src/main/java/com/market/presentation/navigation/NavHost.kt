@@ -45,6 +45,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -60,12 +61,14 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.DocumentReference
 import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
 import com.market.presentation.screen.auth.LoginScreen
 import com.market.presentation.screen.household.CreateHouseholdScreen
 import com.market.presentation.screen.household.JoinHouseholdScreen
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -251,6 +254,9 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
     val lists = remember { mutableStateListOf<Map<String, Any?>>() }
     var showCreateDialog by remember { mutableStateOf(false) }
     var newListName by remember { mutableStateOf("") }
+    var listToRename by remember { mutableStateOf<Map<String, Any?>?>(null) }
+    var renameText by remember { mutableStateOf("") }
+    var listToDelete by remember { mutableStateOf<Map<String, Any?>?>(null) }
 
     LaunchedEffect(householdId) {
         val hid = householdId ?: return@LaunchedEffect
@@ -292,19 +298,31 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
                         val name = list["name"] as? String ?: "Sin nombre"
                         val createdAt = (list["createdAt"] as? Number)?.toLong() ?: 0L
                         val itemCount = (list["itemCount"] as? Number)?.toInt() ?: 0
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clickable { onOpenList(list["id"] as String) }
-                                .padding(vertical = 14.dp)
+                                .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text(name, style = MaterialTheme.typography.titleMedium)
-                            Text(
-                                if (createdAt > 0) "${formatDate(createdAt)} · $itemCount productos"
-                                else "$itemCount productos",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(name, style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    if (createdAt > 0) "${formatDate(createdAt)} · $itemCount productos"
+                                    else "$itemCount productos",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(onClick = {
+                                listToRename = list
+                                renameText = name
+                            }) {
+                                Icon(Icons.Filled.Edit, contentDescription = "Editar nombre")
+                            }
+                            IconButton(onClick = { listToDelete = list }) {
+                                Icon(Icons.Filled.Delete, contentDescription = "Eliminar lista")
+                            }
                         }
                         HorizontalDivider()
                     }
@@ -349,6 +367,61 @@ fun ShoppingListsScreen(onOpenList: (String) -> Unit) {
             dismissButton = {
                 TextButton(onClick = { showCreateDialog = false; newListName = "" }) { Text("Cancelar") }
             }
+        )
+    }
+
+    listToRename?.let { list ->
+        AlertDialog(
+            onDismissRequest = { listToRename = null },
+            title = { Text("Editar nombre") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    label = { Text("Nombre de la lista") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    val hid = householdId ?: return@TextButton
+                    val listId = list["id"] as? String ?: return@TextButton
+                    if (renameText.isNotBlank()) {
+                        FirebaseFirestore.getInstance()
+                            .collection("households").document(hid).collection("lists")
+                            .document(listId)
+                            .update("name", renameText.trim())
+                    }
+                    listToRename = null
+                }) { Text("Guardar") }
+            },
+            dismissButton = { TextButton(onClick = { listToRename = null }) { Text("Cancelar") } }
+        )
+    }
+
+    listToDelete?.let { list ->
+        AlertDialog(
+            onDismissRequest = { listToDelete = null },
+            title = { Text("Eliminar lista") },
+            text = { Text("¿Seguro que querés eliminar \"${list["name"]}\"? Esta acción no se puede deshacer.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val hid = householdId ?: return@TextButton
+                    val listId = list["id"] as? String ?: return@TextButton
+                    val db = FirebaseFirestore.getInstance()
+                    val listRef = db.collection("households").document(hid).collection("lists").document(listId)
+                    // Delete items subcollection then the list doc
+                    listRef.collection("items").get().addOnSuccessListener { snap ->
+                        val batch = db.batch()
+                        snap.documents.forEach { batch.delete(it.reference) }
+                        batch.delete(listRef)
+                        batch.commit()
+                    }
+                    listToDelete = null
+                }) { Text("Eliminar") }
+            },
+            dismissButton = { TextButton(onClick = { listToDelete = null }) { Text("Cancelar") } }
         )
     }
 }
@@ -645,6 +718,9 @@ fun HogarScreen() {
     var copied by remember { mutableIntStateOf(0) }
     var refreshTrigger by remember { mutableIntStateOf(0) }
     val allHouseholds = remember { mutableStateListOf<Map<String, Any?>>() }
+    var householdToDelete by remember { mutableStateOf<Map<String, Any?>?>(null) }
+    var deleteError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(refreshTrigger) {
         val db = FirebaseFirestore.getInstance()
@@ -815,16 +891,21 @@ fun HogarScreen() {
                             )
                         }
                         if (!isActive) {
-                            TextButton(onClick = {
-                                FirebaseFirestore.getInstance()
-                                    .collection("users")
-                                    .document(FirebaseAuth.getInstance().currentUser?.uid ?: return@TextButton)
-                                    .update(
-                                        "householdId", hhId,
-                                        "householdIds", FieldValue.arrayUnion(hhId)
-                                    )
-                                refreshTrigger++
-                            }) { Text("Usar") }
+                            Row {
+                                TextButton(onClick = {
+                                    FirebaseFirestore.getInstance()
+                                        .collection("users")
+                                        .document(FirebaseAuth.getInstance().currentUser?.uid ?: return@TextButton)
+                                        .update(
+                                            "householdId", hhId,
+                                            "householdIds", FieldValue.arrayUnion(hhId)
+                                        )
+                                    refreshTrigger++
+                                }) { Text("Usar") }
+                                IconButton(onClick = { householdToDelete = hh }) {
+                                    Icon(Icons.Filled.Delete, contentDescription = "Eliminar hogar")
+                                }
+                            }
                         } else {
                             Text("Activo", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
                         }
@@ -853,6 +934,81 @@ fun HogarScreen() {
                     }
                 )
             }
+
+            householdToDelete?.let { hh ->
+                AlertDialog(
+                    onDismissRequest = { householdToDelete = null; deleteError = null },
+                    title = { Text("Eliminar hogar") },
+                    text = {
+                        Column {
+                            Text("¿Seguro que querés eliminar \"${hh["name"]}\"? Se borrará el hogar y todos sus datos (listas, productos, precios, historial). Esta acción no se puede deshacer.")
+                            deleteError?.let {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text(it, color = MaterialTheme.colorScheme.error)
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            val hhid = hh["id"] as? String ?: return@TextButton
+                            val uid = FirebaseAuth.getInstance().currentUser?.uid ?: return@TextButton
+                            deleteError = null
+                            scope.launch {
+                                try {
+                                    val db = FirebaseFirestore.getInstance()
+                                    val hhRef = db.collection("households").document(hhid)
+                                    val hhDoc = hhRef.get().await()
+                                    if (!hhDoc.exists()) {
+                                        db.collection("users").document(uid)
+                                            .update("householdIds", FieldValue.arrayRemove(hhid)).await()
+                                        householdToDelete = null
+                                        refreshTrigger++
+                                        return@launch
+                                    }
+                                    val memberDoc = hhRef.collection("members").document(uid).get().await()
+                                    if (memberDoc.getString("role") != "ADMIN") {
+                                        deleteError = "Solo el administrador del hogar puede eliminarlo."
+                                        return@launch
+                                    }
+
+                                    // Collect every document to delete
+                                    val refsToDelete = mutableListOf<DocumentReference>()
+                                    hhRef.collection("members").get().await()
+                                        .documents.forEach { refsToDelete += it.reference }
+                                    hhRef.collection("lists").get().await().documents.forEach { listDoc ->
+                                        listDoc.reference.collection("items").get().await()
+                                            .documents.forEach { refsToDelete += it.reference }
+                                        refsToDelete += listDoc.reference
+                                    }
+                                    hhRef.collection("prices").get().await()
+                                        .documents.forEach { refsToDelete += it.reference }
+                                    hhRef.collection("trips").get().await()
+                                        .documents.forEach { refsToDelete += it.reference }
+                                    hhRef.collection("stores").get().await()
+                                        .documents.forEach { refsToDelete += it.reference }
+                                    refsToDelete += hhRef
+
+                                    refsToDelete.chunked(450).forEach { chunk ->
+                                        val batch = db.batch()
+                                        chunk.forEach { batch.delete(it) }
+                                        batch.commit().await()
+                                    }
+
+                                    db.collection("users").document(uid)
+                                        .update("householdIds", FieldValue.arrayRemove(hhid)).await()
+                                    householdToDelete = null
+                                    refreshTrigger++
+                                } catch (e: Exception) {
+                                    deleteError = "Error al eliminar: ${e.message}"
+                                }
+                            }
+                        }) { Text("Eliminar") }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { householdToDelete = null; deleteError = null }) { Text("Cancelar") }
+                    }
+                )
+            }
         }
     }
 }
@@ -860,7 +1016,10 @@ fun HogarScreen() {
 @Composable
 fun NewHouseholdDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
     var name by remember { mutableStateOf("") }
+    var duplicateError by remember { mutableStateOf<String?>(null) }
+    var isCreating by remember { mutableStateOf(false) }
     val user = FirebaseAuth.getInstance().currentUser
+    val scope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         if (name.isBlank() && user?.displayName != null) {
             name = "Hogar de ${user.displayName}"
@@ -868,47 +1027,79 @@ fun NewHouseholdDialog(onDismiss: () -> Unit, onCreated: () -> Unit) {
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!isCreating) onDismiss() },
         title = { Text("Nuevo hogar") },
         text = {
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Nombre del hogar") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it; duplicateError = null },
+                    label = { Text("Nombre del hogar") },
+                    singleLine = true,
+                    isError = duplicateError != null,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                duplicateError?.let {
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                }
+            }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val user = FirebaseAuth.getInstance().currentUser ?: return@TextButton
-                if (name.isBlank()) return@TextButton
-                val db = FirebaseFirestore.getInstance()
-                val now = System.currentTimeMillis()
-                val inviteCode = UUID.randomUUID().toString().take(6).uppercase()
-                val newHid = db.collection("households").document()
+            TextButton(
+                onClick = {
+                    val currentUser = user ?: return@TextButton
+                    if (name.isBlank() || isCreating) return@TextButton
+                    val db = FirebaseFirestore.getInstance()
+                    scope.launch {
+                        isCreating = true
+                        duplicateError = null
+                        try {
+                            // Reject duplicate household names
+                            val userDoc = db.collection("users").document(currentUser.uid).get().await()
+                            val storedIds = userDoc.get("householdIds") as? List<*> ?: emptyList<Any>()
+                            val targetName = name.trim()
+                            for (hhid in storedIds.mapNotNull { it as? String }) {
+                                val hhDoc = db.collection("households").document(hhid).get().await()
+                                val existingName = hhDoc.getString("name") ?: ""
+                                if (existingName.trim().equals(targetName, ignoreCase = true)) {
+                                    duplicateError = "Ya existe un hogar con ese nombre. Elegí otro nombre o eliminá el duplicado."
+                                    isCreating = false
+                                    return@launch
+                                }
+                            }
 
-                newHid.set(mapOf(
-                    "name" to name.trim(),
-                    "createdAt" to now,
-                    "createdBy" to user.uid,
-                    "inviteCode" to inviteCode
-                )).addOnSuccessListener {
-                    newHid.collection("members").document(user.uid).set(mapOf(
-                        "role" to "ADMIN",
-                        "displayName" to (user.displayName ?: ""),
-                        "joinedAt" to now
-                    ))
-                    db.collection("users").document(user.uid).update(
-                        "householdId", newHid.id,
-                        "householdIds", FieldValue.arrayUnion(newHid.id)
-                    )
-                    onDismiss()
-                    onCreated()
-                }
-            }, enabled = name.isNotBlank()) { Text("Crear") }
+                            val now = System.currentTimeMillis()
+                            val inviteCode = UUID.randomUUID().toString().take(6).uppercase()
+                            val newHid = db.collection("households").document()
+                            newHid.set(mapOf(
+                                "name" to targetName,
+                                "createdAt" to now,
+                                "createdBy" to currentUser.uid,
+                                "inviteCode" to inviteCode
+                            )).await()
+                            newHid.collection("members").document(currentUser.uid).set(mapOf(
+                                "role" to "ADMIN",
+                                "displayName" to (currentUser.displayName ?: ""),
+                                "joinedAt" to now
+                            )).await()
+                            db.collection("users").document(currentUser.uid).update(
+                                "householdId", newHid.id,
+                                "householdIds", FieldValue.arrayUnion(newHid.id)
+                            ).await()
+                            onDismiss()
+                            onCreated()
+                        } catch (e: Exception) {
+                            duplicateError = "Error al crear: ${e.message}"
+                        } finally {
+                            isCreating = false
+                        }
+                    }
+                },
+                enabled = name.isNotBlank() && !isCreating
+            ) { Text(if (isCreating) "Creando..." else "Crear") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancelar") } }
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !isCreating) { Text("Cancelar") } }
     )
 }
 
